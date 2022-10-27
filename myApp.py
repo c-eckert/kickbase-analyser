@@ -2,7 +2,6 @@ import streamlit as st
 from kickbase_api.kickbase import Kickbase
 from kickbase_api.exceptions import KickbaseException
 import numpy as np
-from sklearn.linear_model import LinearRegression
 import plotly.graph_objects as go
 
 bundesliga = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
