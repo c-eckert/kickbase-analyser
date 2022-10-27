@@ -1,1 +1,2 @@
 Kickbase-API
+plotly
