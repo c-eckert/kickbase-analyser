@@ -1,1 +1,1 @@
-pip install Kickbase-API
+Kickbase-API
