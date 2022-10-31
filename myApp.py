@@ -158,7 +158,7 @@ fig = px.scatter(
     x="avg_points", 
     y="value", 
     color="role", 
-    symbol="status", 
-    hover_data=["last_name", "first_name", "position", "team"]
+    symbol="position", 
+    hover_data=["last_name", "first_name", "status", "team"]
     )
 st.plotly_chart(fig, use_container_width=True)
