@@ -34,11 +34,9 @@ role_dict = {
     3 : "TRANSFERMARKT"
 }
 
-st.title('Uber pickups in NYC')
+st.title('Kickbase Analyzer')
 
 DB_FILE = "database/player.db"
-
-
 
 def update_database(username, password):
     kickbase = Kickbase()
@@ -133,7 +131,8 @@ def load_data(next_matchday, avg_range, positions, delete_peaks):
     return df
 
 st.write("## Average Points")
-avg_range = st.slider("Select how many matchdays will count", 1, 11, 5)
+avg_range = st.slider("Current matchday", 1, 34, 11)
+avg_range = st.slider("Select how many matchdays will count", 1, avg_range, 5)
 
 positions = st.multiselect(
     'Positions to show',
