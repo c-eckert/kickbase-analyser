@@ -1,104 +1,165 @@
+import sqlite3
 import streamlit as st
+import pandas as pd
 from kickbase_api.kickbase import Kickbase
-from kickbase_api.exceptions import KickbaseException
-import numpy as np
-import plotly.graph_objects as go
+import plotly.express as px
+
 
 bundesliga = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
 
-def calc_regression(x, y):
-    regression = LinearRegression()
-    res = regression.fit(x.reshape(-1,1), y)
-    return res.predict(x.reshape(-1,1))
+trend_dict = {
+    0 : "o", 
+    1 : "+", 
+    2 : "-"
+}
+
+status_dict = {
+    0 : "FIT",
+    1 : "VERLETZT",
+    2 : "ANGESCHLAGEN",
+    4 : "AUFBAUTRAINING",
+    8 : "ROT-GESPERRT",
+    16 : "GELB-ROT-GESPERRT",
+    32 : "GELB_GESPERRT",
+    64 : "NICHT_IM_KADER",
+    128 : "NICHT_IN_LIGA",
+    256 : "ABWESEND",
+    9999999999 : "UNBEKANNT"
+}
+
+role_dict = {
+    0 : "FREI",
+    1 : "TEAM",
+    2 : "LIGA",
+    3 : "TRANSFERMARKT"
+}
+
+st.title('Uber pickups in NYC')
+
+DB_FILE = "database/player.db"
 
 
-def last_avg(player, next_matchday, counting_matchdays):
+
+def update_database(username, password):
+    kickbase = Kickbase()
+    user, league = kickbase.login(username, password)
+    conn = sqlite3.connect(DB_FILE)
+    with conn:
+        cur = conn.cursor()
+        for team in bundesliga:
+            players = kickbase.team_players(team)
+            for p in players:
+                player_id = kickbase._get_player_id(p)
+                market_value = int(p.market_value)
+                market_value_trend = trend_dict[int(p.market_value_trend)]
+                status = status_dict[int(p.status)]
+
+                cur.execute("""
+                UPDATE spieler 
+                SET value = ?,
+                    value_trend = ?,
+                    status = ?,
+                    role = ?
+                WHERE player_id = ?;
+                """, 
+                (market_value, market_value_trend, status, role_dict[0], player_id)
+            )
+
+        players = kickbase.league_user_players(league[0], user)
+        for p in players:
+            player_id = kickbase._get_player_id(p)
+            cur.execute("""
+            UPDATE spieler 
+            SET role = ? 
+            WHERE player_id = ?;
+            """, 
+            (role_dict[1], player_id)
+            )
+
+        market = kickbase.market(league[0])
+        market_players = market.players
+        for p in market_players:
+            player_id = kickbase._get_player_id(p)
+            cur.execute("""
+            UPDATE spieler 
+            SET role = ? 
+            WHERE player_id = ?;
+            """,
+            (role_dict[3], player_id)
+            )
+
+
+
+def construct_query(positions):
+    if len(positions) == 0:
+        return "SELECT * FROM spieler"
+    if len(positions) == 1:
+        return f"""SELECT * FROM spieler WHERE position = "{positions[0]}";"""
     
-    player_id = kickbase._get_player_id(player)
-    r = kickbase._do_get("/players/{}/points".format(player_id), True)
-
-    if r.status_code != 200:
-        raise KickbaseException()
-
-    if "s" not in r.json():
-        return 0
-    
-    if not r.json()["s"]:
-        return 0 # Array is empty
-
-    if r.json()["s"][-1]["t"] != "2022/2023":
-        return 0 # no current season
-    
-    season = r.json()["s"][-1]["m"]
-    punkte_summe = 0
-    for matchday in season:
-        if (matchday["d"] > next_matchday - counting_matchdays):
-            punkte_summe += matchday["p"]
-
-    return int(punkte_summe/counting_matchdays)
+    return f"SELECT * FROM spieler WHERE position IN {tuple(positions)};"
 
 
-def calc_avg(players, next_matchday, counting_matchdays):
-    avg_array = np.array([])
-    for p in players:
-        avg_array = np.append(avg_array, int(last_avg(p, next_matchday, counting_matchdays)))
-    return avg_array
 
-kickbase = Kickbase()
+@st.cache
+def load_data(next_matchday, avg_range, positions, delete_peaks):
+    conn = sqlite3.connect(DB_FILE)
 
-username = st.text_input('Username')
-password = st.text_input('Password')
+    with conn:
+        sql_query = construct_query(positions)
+        df = pd.read_sql_query(sql_query, conn)
+        avg_points = []
+        for player_id in df['player_id'].tolist():
+            cur = conn.cursor()
+            first_matchday = next_matchday - avg_range
+            cur.execute(
+                "SELECT points FROM punkte WHERE (player_id = ? AND matchday > ?)", 
+                (player_id, first_matchday)
+            )
+            lst_points = cur.fetchall()
+            lst_points = [int(x[0]) for x in lst_points]
+            
+            # Max und Min entfernen
+            if delete_peaks and len(lst_points) >= 3:
 
-user, league = kickbase.login(username, password)
+                lst_points.remove(max(lst_points))
+                lst_points.remove(min(lst_points))
+            
+            avg_points.append(sum(lst_points)/avg_range)
+        
+        df['avg_points'] = avg_points
 
-
-# market player
-market_value = np.array([])
-tot_points = np.array([])
-names = np.array([])
-
-market = kickbase.market(league[0])
-market_players = market.players
-
-for p in market_players:
-    market_value = np.append(market_value, int(p.market_value))
-    tot_points = np.append(tot_points, int(p.totalPoints))
-    names = np.append(names, p.last_name + ", " + p.first_name)
-
-
-# team player
-team_market_value = np.array([])
-team_tot_points = np.array([])
-team_names = np.array([])
-
-team_players = kickbase.league_user_players(league[0], user)
-
-for p in team_players:
-    team_market_value = np.append(team_market_value, int(p.market_value))
-    team_tot_points = np.append(team_tot_points, int(p.totalPoints))
-    team_names = np.append(team_names, p.last_name + ", " + p.first_name)
-
-
-#############
-# STREAMLIT #
-#############
-
-
-st.write("""
-# My first app
-Hello world
-""")
+    conn.close()
+    print(df)
+    return df
 
 st.write("## Average Points")
-number = st.slider("Select how many matchdays will count", 1, 11, 5)
-market_avg_points = calc_avg(market_players, 11, number)
-team_avg_points = calc_avg(team_players, 11, number)
+avg_range = st.slider("Select how many matchdays will count", 1, 11, 5)
 
-# Create traces
-fig = go.Figure()
-#fig.add_trace(go.Scatter(x=all_avg5_points, y=all_market_value, name="Bundesliga", mode="markers", text=all_names))
-fig.add_trace(go.Scatter(x=market_avg_points, y=market_value, name="Transfermarkt", mode="markers", text=names, marker_symbol=3))
-fig.add_trace(go.Scatter(x=team_avg_points, y=team_market_value, name="Team", mode="markers", text=team_names, marker_symbol=3))
-#fig.add_trace(go.Scatter(x=avg_regression, y=all_market_value, name="Durchschnittsmarktwert", mode = "lines", marker_color = "lightgreen"))
+positions = st.multiselect(
+    'Positions to show',
+    ['TW', 'ABW', 'MIT', 'ANG'],
+    [])
 
+delete_peaks = st.checkbox('Delete peaks')
+
+data_load_state = st.text('Loading data...')
+df = load_data(11, avg_range, positions, delete_peaks)
+data_load_state.text("Done! (using st.cache)")
+
+if st.button('Update Database'):
+    update_database(st.secrets.kickbase_credentials.username, st.secrets.kickbase_credentials.password)
+
+if st.checkbox('Show raw data'):
+    st.subheader('Raw data')
+    st.write(df)
+
+st.subheader('Number of pickups by hour')
+fig = px.scatter(
+    df, 
+    x="avg_points", 
+    y="value", 
+    color="role", 
+    symbol="status", 
+    hover_data=["last_name", "first_name", "position", "team"]
+    )
 st.plotly_chart(fig, use_container_width=True)
