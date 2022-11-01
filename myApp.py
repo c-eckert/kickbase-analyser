@@ -39,52 +39,51 @@ st.title('Kickbase Analyzer')
 DB_FILE = "database/player.db"
 
 def update_database(username, password):
-    kickbase = Kickbase()
-    user, league = kickbase.login(username, password)
+    kb = Kickbase()
+    user, league = kb.login(username, password)
+
     conn = sqlite3.connect(DB_FILE)
+
     with conn:
         cur = conn.cursor()
         for team in bundesliga:
-            players = kickbase.team_players(team)
+            players = kb.team_players(team)
             for p in players:
-                player_id = kickbase._get_player_id(p)
+                player_id = kb._get_player_id(p)
                 market_value = int(p.market_value)
                 market_value_trend = trend_dict[int(p.market_value_trend)]
                 status = status_dict[int(p.status)]
 
-                cur.execute("""
-                UPDATE spieler 
-                SET value = ?,
-                    value_trend = ?,
-                    status = ?,
-                    role = ?
-                WHERE player_id = ?;
-                """, 
-                (market_value, market_value_trend, status, role_dict[0], player_id)
-            )
+                cur.execute(
+                    "UPDATE spieler SET value = ?, value_trend = ?, status = ?, role = ? WHERE player_id = ?;", 
+                    (market_value, market_value_trend, status, role_dict[0], player_id)
+                    )
+        
 
-        players = kickbase.league_user_players(league[0], user)
-        for p in players:
-            player_id = kickbase._get_player_id(p)
-            cur.execute("""
-            UPDATE spieler 
-            SET role = ? 
-            WHERE player_id = ?;
-            """, 
-            (role_dict[1], player_id)
-            )
+        users = kb.league_users(kb._get_league_id(league))
+        for user in users:
+            players = kb.league_user_players(league[0], user)
+            for i, p in enumerate(players):
+                player_id = kb._get_player_id(p)
+                if(i == 0):
+                    cur.execute(
+                        "UPDATE spieler SET role = ? WHERE player_id = ?;", 
+                        (role_dict[2], player_id)
+                        )
+                else:
+                    cur.execute(
+                        "UPDATE spieler SET role = ? WHERE player_id = ?;", 
+                        (role_dict[1], player_id)
+                        )
 
-        market = kickbase.market(league[0])
+        market = kb.market(league[0])
         market_players = market.players
         for p in market_players:
-            player_id = kickbase._get_player_id(p)
-            cur.execute("""
-            UPDATE spieler 
-            SET role = ? 
-            WHERE player_id = ?;
-            """,
-            (role_dict[3], player_id)
-            )
+            player_id = kb._get_player_id(p)
+            cur.execute(
+                "UPDATE spieler SET role = ? WHERE player_id = ?;",
+                (role_dict[3], player_id)
+                )
 
 
 
@@ -97,7 +96,7 @@ def construct_query(positions):
     return f"SELECT * FROM spieler WHERE position IN {tuple(positions)};"
 
 
-
+# DataFrame (Pandas) holt sich Daten aus sqlite-Datenbank
 @st.cache
 def load_data(next_matchday, avg_range, positions, delete_peaks):
     conn = sqlite3.connect(DB_FILE)
@@ -118,7 +117,6 @@ def load_data(next_matchday, avg_range, positions, delete_peaks):
             
             # Max und Min entfernen
             if delete_peaks and len(lst_points) >= 3:
-
                 lst_points.remove(max(lst_points))
                 lst_points.remove(min(lst_points))
             
