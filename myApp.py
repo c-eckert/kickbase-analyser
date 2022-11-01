@@ -60,7 +60,7 @@ def update_database(username, password):
                     )
         
 
-        users = kb.league_users(kb._get_league_id(league))
+        users = kb.league_users(kb._get_league_id(league[0]))
         for user in users:
             players = kb.league_user_players(league[0], user)
             for i, p in enumerate(players):
