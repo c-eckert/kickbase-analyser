@@ -103,7 +103,7 @@ def construct_query(positions):
 
 
 # DataFrame (Pandas) holt sich Daten aus sqlite-Datenbank
-#@st.cache
+@st.cache
 def load_data(next_matchday, avg_range, positions, delete_peaks):
     conn = sqlite3.connect(DB_FILE)
 
