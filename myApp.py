@@ -72,9 +72,6 @@ def update_database():
 
         users = kb.league_users(kb._get_league_id(league[0]))
         for user in users:
-            print(user.name)
-            print(user.id)
-            print(user_me.id)
             players = kb.league_user_players(league[0], user.id)
             for p in players:
                 player_id = kb._get_player_id(p)
@@ -130,8 +127,6 @@ def load_data(next_matchday, avg_range, positions, delete_peaks):
         
         df['avg_points'] = avg_points
 
-    conn.close()
-    print(df)
     return df
 
 
