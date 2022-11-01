@@ -5,15 +5,15 @@ from kickbase_api.kickbase import Kickbase
 import plotly.express as px
 
 
-bundesliga = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
+BUNDESLIGA = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
 
-trend_dict = {
+TRENT_DICT = {
     0 : "o", 
     1 : "+", 
     2 : "-"
 }
 
-status_dict = {
+STATUS_DICT = {
     0 : "FIT",
     1 : "VERLETZT",
     2 : "ANGESCHLAGEN",
@@ -27,38 +27,44 @@ status_dict = {
     9999999999 : "UNBEKANNT"
 }
 
-role_dict = {
+ROLE_DICT = {
     0 : "FREI",
     1 : "TEAM",
     2 : "LIGA",
     3 : "TRANSFERMARKT"
 }
 
-st.title('Kickbase Analyzer')
-
-kb = Kickbase()
-user_me, league = kb.login(st.secrets.kickbase_credentials.username, st.secrets.kickbase_credentials.password)
-
 DB_FILE = "database/player.db"
 
-def update_database():
-    
 
+
+@st.cache
+def login():
+    kb = Kickbase()
+    user_me, league = kb.login(st.secrets.kickbase_credentials.username, st.secrets.kickbase_credentials.password)
+    return kb, user_me, league
+
+
+@st.cache
+def get_current_matchday(kb, league):
+    return kb.league_stats(kb._get_league_id(league[0])).current_day
+
+
+def update_database(kb, league, user_me):
     conn = sqlite3.connect(DB_FILE)
-
     with conn:
         cur = conn.cursor()
-        for team in bundesliga:
+        for team in BUNDESLIGA:
             players = kb.team_players(team)
             for p in players:
                 player_id = kb._get_player_id(p)
                 market_value = int(p.market_value)
-                market_value_trend = trend_dict[int(p.market_value_trend)]
-                status = status_dict[int(p.status)]
+                market_value_trend = TRENT_DICT[int(p.market_value_trend)]
+                status = STATUS_DICT[int(p.status)]
 
                 cur.execute(
                     "UPDATE spieler SET value = ?, value_trend = ?, status = ?, role = ? WHERE player_id = ?;", 
-                    (market_value, market_value_trend, status, role_dict[0], player_id)
+                    (market_value, market_value_trend, status, ROLE_DICT[0], player_id)
                     )
         
         market = kb.market(league[0])
@@ -67,7 +73,7 @@ def update_database():
             player_id = kb._get_player_id(p)
             cur.execute(
                 "UPDATE spieler SET role = ? WHERE player_id = ?;",
-                (role_dict[3], player_id)
+                (ROLE_DICT[3], player_id)
                 )
 
         users = kb.league_users(kb._get_league_id(league[0]))
@@ -78,18 +84,15 @@ def update_database():
                 if(user.id == user_me.id):
                     cur.execute(
                         "UPDATE spieler SET role = ? WHERE player_id = ?;", 
-                        (role_dict[1], player_id)
+                        (ROLE_DICT[1], player_id)
                         )
                 else:
                     cur.execute(
                         "UPDATE spieler SET role = ? WHERE player_id = ?;", 
-                        (role_dict[2], player_id)
+                        (ROLE_DICT[2], player_id)
                         )
 
         
-
-
-
 def construct_query(positions):
     if len(positions) == 0:
         return "SELECT * FROM spieler"
@@ -129,12 +132,13 @@ def load_data(next_matchday, avg_range, positions, delete_peaks):
 
     return df
 
+# WEBSITE
+kb, user_me, league = login()
+match_day = get_current_matchday(kb, league)
 
-match_day = kb.league_stats(kb._get_league_id(league[0])).current_day
+st.title('Kickbase Analyzer')
 st.write(f"### {str(match_day)}. Matchday")
-
 avg_range = st.slider("Select how many matchdays will count", 1, match_day, 5)
-
 positions = st.multiselect(
     'Positions to show',
     ['TW', 'ABW', 'MIT', 'ANG'],
@@ -147,7 +151,7 @@ df = load_data(match_day, avg_range, positions, delete_peaks)
 data_load_state.text("Done! (using st.cache)")
 
 if st.button('Update Database'):
-    update_database()
+    update_database(kb, league, user_me)
 
 if st.checkbox('Show raw data'):
     st.subheader('Raw data')
