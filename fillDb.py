@@ -1,22 +1,38 @@
 from kickbase_api.kickbase import Kickbase
 from kickbase_api.exceptions import KickbaseException
-import sqlite3
+#import sqlite3
 import streamlit as st
+import mysql.connector
 
 username = st.secrets.kickbase_credentials.username
 password = st.secrets.kickbase_credentials.password
 
+kb = Kickbase()
+user, league = kb.login(username, password)
 
-connection = sqlite3.connect("database/player.db")
-curser = connection.cursor()
+# Initialize connection.
+# Uses st.experimental_singleton to only run once.
+@st.experimental_singleton
+def init_connection():
+    return mysql.connector.connect(**st.secrets["mysql"])
 
-curser.execute("DROP TABLE IF EXISTS spieler")
-curser.execute("DROP TABLE IF EXISTS punkte")
+conn = init_connection()
+
+# Perform query.
+# Uses st.experimental_memo to only rerun when the query changes or after 10 min.
+@st.experimental_memo(ttl=600)
+def run_query(query, attr=None):
+    with conn.cursor() as cur:
+        cur.execute(query, attr)
+        return cur.fetchall()
 
 
-bundesliga = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
+run_query("DROP TABLE IF EXISTS spieler, punkte")
 
-team_dict = {
+
+BUNDESLIGA = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
+
+TEAM_DICT = {
     2:  "Bayern",
     3:  "Dortmund",
     4:  "Frankfurt", # 4
@@ -37,20 +53,20 @@ team_dict = {
     43: "Leibzig" # 43
 }
 
-position_dict = {
+POSITION_DICT = {
     1 : "TW",
     2 : "ABW",
     3 : "MIT",
     4 : "ANG"
 }
 
-trend_dict = {
+TRENT_DICT = {
     0 : "o", 
     1 : "+", 
     2 : "-"
 }
 
-status_dict = {
+STATUS_DICT = {
     0 : "FIT",
     1 : "VERLETZT",
     2 : "ANGESCHLAGEN",
@@ -64,49 +80,34 @@ status_dict = {
     9999999999 : "UNBEKANNT"
 }
 
-role_dict = {
-    0 : "FREI",
-    1 : "TEAM",
-    2 : "LIGA",
-    3 : "TRANSFERMARKT"
-}
-
 
 def get_points(player_id):
     
-    r = kickbase._do_get("/players/{}/points".format(player_id), True)
+    r = kb._do_get("/players/{}/points".format(player_id), True)
 
     if r.status_code != 200:
         raise KickbaseException()
 
     if "s" not in r.json():
-        return 0
+        return
     
     if not r.json()["s"]:
-        return 0 # Array is empty
+        return # Array is empty
 
     if r.json()["s"][-1]["t"] != "2022/2023":
-        return 0 # no current season
+        return # no current season
     
     season = r.json()["s"][-1]["m"]
     for match in season:
         matchday = match["d"]
         points = match["p"]
 
-        curser.execute("""
+        run_query("""
             INSERT INTO punkte 
-            VALUES(?, ?, ?)
+            VALUES(%s, %s, %s)
             """,
             (matchday, points, player_id)
             )
-    return 1
-
-
-kickbase = Kickbase()
-
-
-
-user, league = kickbase.login(username, password)
 
 
 sql_command = """
@@ -119,9 +120,10 @@ CREATE TABLE IF NOT EXISTS spieler (
     team        TEXT,
     position    TEXT,
     status      TEXT,
-    role        TEXT
+    user        TEXT,
+    transfer    BOOL
 )"""
-curser.execute(sql_command)
+run_query(sql_command)
 
 
 sql_command = """
@@ -132,27 +134,27 @@ CREATE TABLE IF NOT EXISTS punkte (
     PRIMARY KEY (matchday, player_id),
     FOREIGN KEY (player_id) REFERENCES spieler(player_id)
 )"""
-curser.execute(sql_command)
+run_query(sql_command)
 
 
-
-for team in bundesliga:
-    players = kickbase.team_players(team)
+for team in BUNDESLIGA:
+    players = kb.team_players(team)
     for p in players:
-        player_id = kickbase._get_player_id(p)
+        player_id = kb._get_player_id(p)
         first_name = p.first_name
         last_name = p.last_name
-        position = position_dict[int(p.position)]
         market_value = int(p.market_value)
-        market_value_trend = trend_dict[int(p.market_value_trend)]
-        status = status_dict[int(p.status)]
-        role = role_dict[0]
-        team_name = team_dict[team]
+        market_value_trend = TRENT_DICT[int(p.market_value_trend)]
+        team_name = TEAM_DICT[team]
+        position = POSITION_DICT[int(p.position)]
+        status = STATUS_DICT[int(p.status)]
+        user = "Free"
+        transfer = False
+        
 
-
-        curser.execute("""
+        run_query("""
         INSERT INTO spieler 
-        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (player_id, 
         last_name, 
@@ -162,30 +164,34 @@ for team in bundesliga:
         team_name, 
         position, 
         status,
-        role)
+        user,
+        transfer)
         )
 
         get_points(player_id)
 
-players = kickbase.league_user_players(league[0], user)
-for p in players:
-    player_id = kickbase._get_player_id(p)
-    curser.execute(
-        "UPDATE spieler SET role = ? WHERE player_id = ?;",
-        (role_dict[1], player_id)
+
+users = kb.league_users(kb._get_league_id(league[0]))
+for user in users:
+    user_players = kb.league_user_players(kb._get_league_id(league[0]), user.id)
+    for p in user_players:
+        player_id = int(kb._get_player_id(p))
+        run_query(
+        "UPDATE spieler SET user = %s WHERE player_id = %s;",
+        (user.name, player_id)
     )
 
-market = kickbase.market(league[0])
+
+market = kb.market(league[0])
 market_players = market.players
 for p in market_players:
-    player_id = kickbase._get_player_id(p)
-    curser.execute(
-        "UPDATE spieler SET role = ? WHERE player_id = ?;",
-        (role_dict[3], player_id)
+    player_id = kb._get_player_id(p)
+    run_query(
+        "UPDATE spieler SET transfer = %s WHERE player_id = %s;",
+        (True, player_id)
     )
 
-connection.commit()
-connection.close()
-
+conn.commit()
+conn.close()
 
 
