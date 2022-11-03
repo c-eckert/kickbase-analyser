@@ -1,3 +1,4 @@
 Kickbase-API
 plotly
-mysql-connector-python
+sqlalchemy
+pymysql
