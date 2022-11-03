@@ -1,4 +1,7 @@
 import sqlalchemy
+from sqlalchemy import insert, table, update, MetaData
+from sqlalchemy.dialects.mysql import insert
+from sqlalchemy.sql.expression import bindparam
 from sqlalchemy.orm import Session
 import streamlit as st
 import pandas as pd
@@ -113,58 +116,103 @@ def db_create():
             FOREIGN KEY (player_id) REFERENCES spieler(player_id)
         )"""
         conn.execute(sql_command)
+ 
+
+@st.experimental_memo
+def get_player_info(_kb, league_id, update_points, insert_all):
+    players_list = []
+    for team in BUNDESLIGA:
+        players = _kb.team_players(team)
+        for p in players:
+            player_id = int(_kb._get_player_id(p))
+            player_dict = {
+               "d_player_id"   : player_id, 
+               "d_last_name"   : p.last_name, 
+               "d_first_name"  : p.first_name, 
+               "d_value"       : int(p.market_value), 
+               "d_value_trend" : TRENT_DICT[int(p.market_value_trend)], 
+               "d_team"        : TEAM_DICT[team], 
+               "d_position"    : POSITION_DICT[int(p.position)], 
+               "d_status"      : STATUS_DICT[int(p.status)], 
+               "d_user"        : "Free", 
+               "d_transfer"    : False
+            }
+            players_list.append(player_dict)
+
+    players_list = update_user(_kb, league_id, players_list)
+    players_list = update_transfer(_kb, league_id, players_list)
+    return players_list
 
 
 @st.experimental_memo
-def db_update(_kb, league_id, update_points, insert_all):
+def update_user(_kb, league_id, players_list):
+    users = _kb.league_users(league_id)
+    for user in users:
+        user_players = _kb.league_user_players(league_id, user.id)
+        for user_player in user_players:
+            user_player_id = int(_kb._get_player_id(user_player))
+            for p in players_list:
+                if p["d_player_id"] == user_player_id:
+                    p["d_user"] = user.name
+    return players_list
+
+
+@st.experimental_memo
+def update_transfer(_kb, league_id, players_list):
+    market = _kb.market(league_id)
+    market_players = market.players
+    for market_player in market_players:
+        market_player_id = int(_kb._get_player_id(market_player))
+        for p in players_list:
+            if p["d_player_id"] == market_player_id:
+                p["d_transfer"] = True
+    return players_list
+
+
+@st.experimental_memo
+def db_update_player(players_list):
     engine = init_connection()
+    
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
+    table_spieler = metadata.tables["spieler"]
+    #conn.execute(insert(my_table), players_list)
+    u = update(table_spieler)
+    u = u.where(table_spieler.c.player_id == bindparam("d_player_id"))
+    u = u.values({
+        "value":        bindparam("d_value"),
+        "value_trend":  bindparam("d_value_trend"),
+        "status":       bindparam("d_status"),
+        "user":         bindparam("d_user"),
+        "transfer":     bindparam("d_transfer"),
+        })
+
     with engine.connect() as conn:
-        for team in BUNDESLIGA:
-            players = _kb.team_players(team)
-            for p in players:
-                player_id = _kb._get_player_id(p)
-                first_name = p.first_name
-                last_name = p.last_name
-                market_value = int(p.market_value)
-                market_value_trend = TRENT_DICT[int(p.market_value_trend)]
-                team_name = TEAM_DICT[team]
-                position = POSITION_DICT[int(p.position)]
-                status = STATUS_DICT[int(p.status)]
-                user = "Free"
-                transfer = False
+        conn.execute(u, players_list)
 
-
-                if insert_all:
-                    conn.execute(
-                        "INSERT INTO spieler VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                        (player_id, last_name, first_name, market_value, market_value_trend, 
-                        team_name, position, status, user, transfer)
-                    )
-                    db_update_points(_kb, conn, player_id)
-
-                else:
-                    conn.execute(
-                        "UPDATE spieler SET value = %s, value_trend = %s, status = %s, user = %s, transfer = %s WHERE player_id = %s;", 
-                        (market_value, market_value_trend, status, user, transfer, player_id)
-                    )
-                    if update_points:
-                        db_update_points(_kb, conn, player_id)
-
-        db_update_user(_kb, conn, league_id)
-        db_update_transfer(_kb, conn, league_id)
-        
 
 @st.experimental_memo
-def db_update_points(_kb, _conn, player_id):
+def get_points_info(_kb):
+    points_list = []
+    for team in BUNDESLIGA:
+        players = _kb.team_players(team)
+        for p in players:
+            player_id = int(_kb._get_player_id(p))
+            request_points(_kb, points_list, player_id)
+    return points_list
+
+
+@st.experimental_memo
+def request_points(_kb, points_list, player_id):
     r = _kb._do_get("/players/{}/points".format(player_id), True)
 
     if r.status_code != 200:
         raise KickbaseException()
 
-    if "s" not in r.json():
+    if "s" not in r.json(): 
         return
     
-    if not r.json()["s"]:
+    if not r.json()["s"]: 
         return # Array is empty
 
     if r.json()["s"][-1]["t"] != "2022/2023":
@@ -175,36 +223,32 @@ def db_update_points(_kb, _conn, player_id):
     for match in season:
         matchday = match["d"]
         points = match["p"]
-
-        _conn.execute(
-            "INSERT INTO punkte VALUES(%s, %s, %s) ON DUPLICATE KEY UPDATE player_id=player_id",
-            (matchday, points, player_id)
-        )
-
-
-@st.experimental_memo
-def db_update_user(_kb, _conn, league_id):
-    users = _kb.league_users(league_id)
-    for user in users:
-        user_players = _kb.league_user_players(league_id, user.id)
-        for p in user_players:
-            player_id = int(_kb._get_player_id(p))
-            _conn.execute(
-                "UPDATE spieler SET user = %s WHERE player_id = %s;",
-                (user.name, player_id)
-            )
+        player_dict = {
+            "d_matchday"  : matchday,
+            "d_points"    : points,
+            "d_player_id" : player_id,
+        }
+        points_list.append(player_dict)
 
 
 @st.experimental_memo
-def db_update_transfer(_kb, _conn, league_id):
-    market = _kb.market(league_id)
-    market_players = market.players
-    for p in market_players:
-        player_id = _kb._get_player_id(p)
-        _conn.execute(
-            "UPDATE spieler SET transfer = %s WHERE player_id = %s;",
-            (True, player_id)
-        )
+def db_update_points(points_list):
+    engine = init_connection()
+    
+    metadata = MetaData()
+    metadata.reflect(bind=engine)
+    table_punkte = metadata.tables["punkte"]
+
+    i = insert(table_punkte)
+    i = i.values({
+        "matchday":     bindparam("d_matchday"),
+        "points":       bindparam("d_points"),
+        "player_id":    bindparam("d_player_id")
+        })
+    i = i.on_duplicate_key_update(player_id = i.inserted.player_id)
+
+    with engine.connect() as conn:
+        conn.execute(i, points_list)
 
 
 @st.experimental_memo
@@ -296,11 +340,13 @@ def main():
 
     st.plotly_chart(fig, use_container_width=True)
     
-    if st.button('Update Marketvalue/Status (ca. 20 s)'):
-        db_update(kb, league_id, False, False)
+    if st.button('Update Marketvalue/Status (ca. 15 s)'):
+        players_list = get_player_info(kb, league_id, False, False)
+        db_update_player(players_list)
 
-    if st.button('Update Points (ca. 150 s)'):
-        db_update(kb, league_id, True, False)
+    if st.button('Update Points (ca. 80 s)'):
+        points_list = get_points_info(kb)
+        db_update_points(points_list)
     
     if st.checkbox('Show raw data'):
         st.subheader('Raw data')
