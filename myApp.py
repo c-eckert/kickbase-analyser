@@ -1,11 +1,11 @@
-import mysql.connector
-from mysql.connector import Error
+import sqlalchemy
+from sqlalchemy.orm import Session
 import streamlit as st
 import pandas as pd
 from kickbase_api.kickbase import Kickbase
 from kickbase_api.exceptions import KickbaseException
 import plotly.express as px
-
+import time
 
 BUNDESLIGA = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
 
@@ -60,33 +60,35 @@ STATUS_DICT = {
 
 # Initialize connection.
 # Uses st.experimental_singleton to only run once.
-#@st.cache(allow_output_mutation=True)
+@st.experimental_singleton
 def init_connection():
-    return mysql.connector.Connect(**st.secrets["mysql"])
+    return sqlalchemy.create_engine(**st.secrets["sqlalchemy"])
 
 
-@st.cache(allow_output_mutation=True)
+@st.experimental_singleton
 def get_kickbase_object():
     kb = Kickbase()
     user_me, league = kb.login(st.secrets.kickbase_credentials.username, st.secrets.kickbase_credentials.password)
-    return kb, user_me, league
+    league_id = kb._get_league_id(league[0])
+    return kb, user_me, league_id
 
 
-@st.cache
-def get_current_matchday(kb, league):
-    return kb.league_stats(kb._get_league_id(league[0])).current_day
+def get_current_matchday(_kb, league_id):
+    return _kb.league_stats(league_id).current_day
 
 
-#@st.cache(hash_funcs={Connection: id})
-def db_delete_all(conn):
-    with conn.curser() as cur:
-        cur.execute("DROP TABLE IF EXISTS spieler")
-        cur.execute("DROP TABLE IF EXISTS punkte")
+@st.experimental_memo
+def db_delete_all():
+    engine = init_connection()
+    with engine.connect() as conn:
+        conn.execute("DROP TABLE IF EXISTS spieler")
+        conn.execute("DROP TABLE IF EXISTS punkte")
 
 
-#@st.cache(hash_funcs={Connection: id})
-def db_create(conn):
-    with conn.curser() as cur:
+@st.experimental_memo
+def db_create():
+    engine = init_connection()
+    with engine.connect() as conn:
         sql_command = """
         CREATE TABLE IF NOT EXISTS spieler (
             player_id   INTEGER     PRIMARY KEY,
@@ -100,7 +102,7 @@ def db_create(conn):
             user        TEXT,
             transfer    BOOL
         )"""
-        cur.execute(sql_command)
+        conn.execute(sql_command)
 
         sql_command = """
         CREATE TABLE IF NOT EXISTS punkte (
@@ -110,62 +112,51 @@ def db_create(conn):
             PRIMARY KEY (matchday, player_id),
             FOREIGN KEY (player_id) REFERENCES spieler(player_id)
         )"""
-        cur.execute(sql_command)
+        conn.execute(sql_command)
 
 
-#@st.cache(hash_funcs={Connection: id})
-def db_update(kb, league, update_points, insert_all):
-    try:
-        conn = init_connection()
-        if conn.is_connected():
-            cur = conn.cursor()
-            for team in BUNDESLIGA:
-                players = kb.team_players(team)
-                for p in players:
-                    player_id = kb._get_player_id(p)
-                    first_name = p.first_name
-                    last_name = p.last_name
-                    market_value = int(p.market_value)
-                    market_value_trend = TRENT_DICT[int(p.market_value_trend)]
-                    team_name = TEAM_DICT[team]
-                    position = POSITION_DICT[int(p.position)]
-                    status = STATUS_DICT[int(p.status)]
-                    user = "Free"
-                    transfer = False
+@st.experimental_memo
+def db_update(_kb, league_id, update_points, insert_all):
+    engine = init_connection()
+    with engine.connect() as conn:
+        for team in BUNDESLIGA:
+            players = _kb.team_players(team)
+            for p in players:
+                player_id = _kb._get_player_id(p)
+                first_name = p.first_name
+                last_name = p.last_name
+                market_value = int(p.market_value)
+                market_value_trend = TRENT_DICT[int(p.market_value_trend)]
+                team_name = TEAM_DICT[team]
+                position = POSITION_DICT[int(p.position)]
+                status = STATUS_DICT[int(p.status)]
+                user = "Free"
+                transfer = False
 
 
-                    if insert_all:
-                        cur.execute(
-                            "INSERT INTO spieler VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
-                            (player_id, last_name, first_name, market_value, market_value_trend, 
-                            team_name, position, status, user, transfer)
-                        )
-                        db_update_points(kb, cur, player_id)
+                if insert_all:
+                    conn.execute(
+                        "INSERT INTO spieler VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                        (player_id, last_name, first_name, market_value, market_value_trend, 
+                        team_name, position, status, user, transfer)
+                    )
+                    db_update_points(_kb, conn, player_id)
 
-                    else:
-                        cur.execute(
-                            "UPDATE spieler SET value = %s, value_trend = %s, status = %s, user = %s, transfer = %s WHERE player_id = %s;", 
-                            (market_value, market_value_trend, status, user, transfer, player_id)
-                        )
-                        if update_points:
-                            db_update_points(kb, cur, player_id)
+                else:
+                    conn.execute(
+                        "UPDATE spieler SET value = %s, value_trend = %s, status = %s, user = %s, transfer = %s WHERE player_id = %s;", 
+                        (market_value, market_value_trend, status, user, transfer, player_id)
+                    )
+                    if update_points:
+                        db_update_points(_kb, conn, player_id)
 
-            db_update_user(kb, cur, league)
-            db_update_transfer(kb, cur, league)
-
-    except Error as e:
-        print("Error while connecting to MySQL", e)
-    finally:
-        if conn.is_connected():
-            conn.close()
-            cur.close()
-            print("MySQL connection is closed")
+        db_update_user(_kb, conn, league_id)
+        db_update_transfer(_kb, conn, league_id)
         
 
-
-#@st.cache(hash_funcs={Connection: id})
-def db_update_points(kb, cur, player_id):
-    r = kb._do_get("/players/{}/points".format(player_id), True)
+@st.experimental_memo
+def db_update_points(_kb, _conn, player_id):
+    r = _kb._do_get("/players/{}/points".format(player_id), True)
 
     if r.status_code != 200:
         raise KickbaseException()
@@ -185,38 +176,38 @@ def db_update_points(kb, cur, player_id):
         matchday = match["d"]
         points = match["p"]
 
-        cur.execute(
+        _conn.execute(
             "INSERT INTO punkte VALUES(%s, %s, %s) ON DUPLICATE KEY UPDATE player_id=player_id",
             (matchday, points, player_id)
         )
 
 
-#@st.cache(hash_funcs={Connection: id})
-def db_update_user(kb, cur, league):
-    users = kb.league_users(kb._get_league_id(league[0]))
+@st.experimental_memo
+def db_update_user(_kb, _conn, league_id):
+    users = _kb.league_users(league_id)
     for user in users:
-        user_players = kb.league_user_players(kb._get_league_id(league[0]), user.id)
+        user_players = _kb.league_user_players(league_id, user.id)
         for p in user_players:
-            player_id = int(kb._get_player_id(p))
-            cur.execute(
+            player_id = int(_kb._get_player_id(p))
+            _conn.execute(
                 "UPDATE spieler SET user = %s WHERE player_id = %s;",
                 (user.name, player_id)
             )
 
 
-#@st.cache(hash_funcs={Connection: id})
-def db_update_transfer(kb, cur, league):
-    market = kb.market(league[0])
+@st.experimental_memo
+def db_update_transfer(_kb, _conn, league_id):
+    market = _kb.market(league_id)
     market_players = market.players
     for p in market_players:
-        player_id = kb._get_player_id(p)
-        cur.execute(
+        player_id = _kb._get_player_id(p)
+        _conn.execute(
             "UPDATE spieler SET transfer = %s WHERE player_id = %s;",
             (True, player_id)
         )
 
 
-@st.cache
+@st.experimental_memo
 def construct_query(positions, show_transfermarket):
     if len(positions) == 0:
         if show_transfermarket:
@@ -236,24 +227,15 @@ def construct_query(positions, show_transfermarket):
 
 
 # DataFrame (Pandas) holt sich Daten aus mysql-Datenbank
-#@st.cache
+@st.experimental_memo
 def load_data(positions, show_transfermarket):
     sql_query = construct_query(positions, show_transfermarket)
-    try:
-        conn = init_connection()
-        if conn.is_connected():
+    engine = init_connection()
+    with engine.connect() as conn:
+        df = pd.read_sql(sql_query, conn)
+        df_points = pd.read_sql("SELECT * FROM punkte", conn)
+        return df, df_points
 
-            df = pd.read_sql(sql_query, conn)
-            df_points = pd.read_sql("SELECT * FROM punkte", conn)
-
-            return df, df_points
-    except Error as e:
-        print("Error while connecting to MySQL", e)
-    finally:
-        if conn.is_connected():
-            conn.close()
-            
-            print("MySQL connection is closed")
 
 
 
@@ -275,8 +257,8 @@ def calc_average(df, df_points, next_matchday, avg_range, delete_peaks):
 
 
 def main():
-    kb, user_me, league = get_kickbase_object()
-    match_day = get_current_matchday(kb, league)
+    kb, user_me, league_id = get_kickbase_object()
+    match_day = get_current_matchday(kb, league_id)
 
     st.title('Kickbase Analyzer')
     st.subheader(f'Average Points ({str(match_day)}. Matchday)')
@@ -315,10 +297,10 @@ def main():
     st.plotly_chart(fig, use_container_width=True)
     
     if st.button('Update Marketvalue/Status (ca. 20 s)'):
-        db_update(kb, league, False, False)
+        db_update(kb, league_id, False, False)
 
     if st.button('Update Points (ca. 150 s)'):
-        db_update(kb, league, True, False)
+        db_update(kb, league_id, True, False)
     
     if st.checkbox('Show raw data'):
         st.subheader('Raw data')
@@ -327,4 +309,6 @@ def main():
 
 
 if __name__ == "__main__":
+    start = time.time()
     main()
+    print(time.time() - start)
