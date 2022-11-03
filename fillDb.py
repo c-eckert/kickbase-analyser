@@ -1,6 +1,5 @@
 from kickbase_api.kickbase import Kickbase
 from kickbase_api.exceptions import KickbaseException
-#import sqlite3
 import streamlit as st
 import mysql.connector
 

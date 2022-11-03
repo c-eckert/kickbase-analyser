@@ -1,5 +1,5 @@
-import sqlite3
-from sqlite3 import Connection
+import mysql.connector
+from mysql.connector import Error
 import streamlit as st
 import pandas as pd
 from kickbase_api.kickbase import Kickbase
@@ -57,12 +57,12 @@ STATUS_DICT = {
     9999999999 : "UNBEKANNT"
 }
 
-DB_FILE = "database/player.db"
 
-
-@st.cache(allow_output_mutation=True)
-def get_sql_connection(path):
-    return sqlite3.connect(path)
+# Initialize connection.
+# Uses st.experimental_singleton to only run once.
+#@st.cache(allow_output_mutation=True)
+def init_connection():
+    return mysql.connector.Connect(**st.secrets["mysql"])
 
 
 @st.cache(allow_output_mutation=True)
@@ -77,17 +77,16 @@ def get_current_matchday(kb, league):
     return kb.league_stats(kb._get_league_id(league[0])).current_day
 
 
-@st.cache(hash_funcs={Connection: id})
+#@st.cache(hash_funcs={Connection: id})
 def db_delete_all(conn):
-    with conn:
-        cur = conn.curser()
+    with conn.curser() as cur:
         cur.execute("DROP TABLE IF EXISTS spieler")
         cur.execute("DROP TABLE IF EXISTS punkte")
 
 
-@st.cache(hash_funcs={Connection: id})
+#@st.cache(hash_funcs={Connection: id})
 def db_create(conn):
-    with conn:
+    with conn.curser() as cur:
         sql_command = """
         CREATE TABLE IF NOT EXISTS spieler (
             player_id   INTEGER     PRIMARY KEY,
@@ -101,7 +100,7 @@ def db_create(conn):
             user        TEXT,
             transfer    BOOL
         )"""
-        conn.execute(sql_command)
+        cur.execute(sql_command)
 
         sql_command = """
         CREATE TABLE IF NOT EXISTS punkte (
@@ -111,49 +110,61 @@ def db_create(conn):
             PRIMARY KEY (matchday, player_id),
             FOREIGN KEY (player_id) REFERENCES spieler(player_id)
         )"""
-        conn.execute(sql_command)
+        cur.execute(sql_command)
 
 
-@st.cache(hash_funcs={Connection: id})
-def db_update(conn, kb, league, update_points, insert_all):
-    with conn:
-        for team in BUNDESLIGA:
-            players = kb.team_players(team)
-            for p in players:
-                player_id = kb._get_player_id(p)
-                first_name = p.first_name
-                last_name = p.last_name
-                market_value = int(p.market_value)
-                market_value_trend = TRENT_DICT[int(p.market_value_trend)]
-                team_name = TEAM_DICT[team]
-                position = POSITION_DICT[int(p.position)]
-                status = STATUS_DICT[int(p.status)]
-                user = "Free"
-                transfer = False
+#@st.cache(hash_funcs={Connection: id})
+def db_update(kb, league, update_points, insert_all):
+    try:
+        conn = init_connection()
+        if conn.is_connected():
+            cur = conn.cursor()
+            for team in BUNDESLIGA:
+                players = kb.team_players(team)
+                for p in players:
+                    player_id = kb._get_player_id(p)
+                    first_name = p.first_name
+                    last_name = p.last_name
+                    market_value = int(p.market_value)
+                    market_value_trend = TRENT_DICT[int(p.market_value_trend)]
+                    team_name = TEAM_DICT[team]
+                    position = POSITION_DICT[int(p.position)]
+                    status = STATUS_DICT[int(p.status)]
+                    user = "Free"
+                    transfer = False
 
 
-                if insert_all:
-                    conn.execute(
-                        "INSERT INTO spieler VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (player_id, last_name, first_name, market_value, market_value_trend, 
-                        team_name, position, status, user, transfer)
-                    )
-                    db_update_points(kb, conn, player_id)
+                    if insert_all:
+                        cur.execute(
+                            "INSERT INTO spieler VALUES(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                            (player_id, last_name, first_name, market_value, market_value_trend, 
+                            team_name, position, status, user, transfer)
+                        )
+                        db_update_points(kb, cur, player_id)
 
-                else:
-                    conn.execute(
-                        "UPDATE spieler SET value = ?, value_trend = ?, status = ?, user = ?, transfer = ? WHERE player_id = ?;", 
-                        (market_value, market_value_trend, status, user, transfer, player_id)
-                    )
-                    if update_points:
-                        db_update_points(kb, conn, player_id)
+                    else:
+                        cur.execute(
+                            "UPDATE spieler SET value = %s, value_trend = %s, status = %s, user = %s, transfer = %s WHERE player_id = %s;", 
+                            (market_value, market_value_trend, status, user, transfer, player_id)
+                        )
+                        if update_points:
+                            db_update_points(kb, cur, player_id)
 
-        db_update_user(kb, conn, league)
-        db_update_transfer(kb, conn, league)
+            db_update_user(kb, cur, league)
+            db_update_transfer(kb, cur, league)
+
+    except Error as e:
+        print("Error while connecting to MySQL", e)
+    finally:
+        if conn.is_connected():
+            conn.close()
+            cur.close()
+            print("MySQL connection is closed")
+        
 
 
-@st.cache(hash_funcs={Connection: id})
-def db_update_points(kb, conn, player_id):
+#@st.cache(hash_funcs={Connection: id})
+def db_update_points(kb, cur, player_id):
     r = kb._do_get("/players/{}/points".format(player_id), True)
 
     if r.status_code != 200:
@@ -169,37 +180,38 @@ def db_update_points(kb, conn, player_id):
         return # no current season
     
     season = r.json()["s"][-1]["m"]
+    
     for match in season:
         matchday = match["d"]
         points = match["p"]
 
-        conn.execute(
-            "INSERT OR IGNORE INTO punkte VALUES(?, ?, ?)",
+        cur.execute(
+            "INSERT INTO punkte VALUES(%s, %s, %s) ON DUPLICATE KEY UPDATE player_id=player_id",
             (matchday, points, player_id)
         )
 
 
-@st.cache(hash_funcs={Connection: id})
-def db_update_user(kb, conn, league):
+#@st.cache(hash_funcs={Connection: id})
+def db_update_user(kb, cur, league):
     users = kb.league_users(kb._get_league_id(league[0]))
     for user in users:
         user_players = kb.league_user_players(kb._get_league_id(league[0]), user.id)
         for p in user_players:
             player_id = int(kb._get_player_id(p))
-            conn.execute(
-            "UPDATE spieler SET user = ? WHERE player_id = ?;",
-            (user.name, player_id)
-    )
+            cur.execute(
+                "UPDATE spieler SET user = %s WHERE player_id = %s;",
+                (user.name, player_id)
+            )
 
 
-@st.cache(hash_funcs={Connection: id})
-def db_update_transfer(kb, conn, league):
+#@st.cache(hash_funcs={Connection: id})
+def db_update_transfer(kb, cur, league):
     market = kb.market(league[0])
     market_players = market.players
     for p in market_players:
         player_id = kb._get_player_id(p)
-        conn.execute(
-            "UPDATE spieler SET transfer = ? WHERE player_id = ?;",
+        cur.execute(
+            "UPDATE spieler SET transfer = %s WHERE player_id = %s;",
             (True, player_id)
         )
 
@@ -223,38 +235,46 @@ def construct_query(positions, show_transfermarket):
     return f"SELECT * FROM spieler WHERE position IN {tuple(positions)}"
 
 
-# DataFrame (Pandas) holt sich Daten aus sqlite-Datenbank
-@st.cache(hash_funcs={Connection: id})
-def load_data(conn, next_matchday, avg_range, positions, delete_peaks, show_transfermarket):
-    with conn:
-        cur = conn.cursor()
-        sql_query = construct_query(positions, show_transfermarket)
-        df = pd.read_sql_query(sql_query, conn)
-        avg_points = []
-        for player_id in df['player_id'].tolist():
-            
-            first_matchday = next_matchday - avg_range
-            cur.execute(
-                "SELECT points FROM punkte WHERE (player_id = ? AND matchday > ?)", 
-                (player_id, first_matchday)
-            )
-            lst_points = cur.fetchall()
-            lst_points = [int(x[0]) for x in lst_points]
-            
-            # Max und Min entfernen
-            if delete_peaks and len(lst_points) >= 3:
-                lst_points.remove(max(lst_points))
-                lst_points.remove(min(lst_points))
-            
-            avg_points.append(sum(lst_points)/avg_range)
-        
-        df['avg_points'] = avg_points
+# DataFrame (Pandas) holt sich Daten aus mysql-Datenbank
+#@st.cache
+def load_data(positions, show_transfermarket):
+    sql_query = construct_query(positions, show_transfermarket)
+    try:
+        conn = init_connection()
+        if conn.is_connected():
 
+            df = pd.read_sql(sql_query, conn)
+            df_points = pd.read_sql("SELECT * FROM punkte", conn)
+
+            return df, df_points
+    except Error as e:
+        print("Error while connecting to MySQL", e)
+    finally:
+        if conn.is_connected():
+            conn.close()
+            
+            print("MySQL connection is closed")
+
+
+
+# aus df_points wird der schnitt berechnet und df als spalte angefügt
+@st.cache
+def calc_average(df, df_points, next_matchday, avg_range, delete_peaks):
+    first_matchday = next_matchday - avg_range
+    avg_points = []
+    for player_id in df['player_id'].tolist():
+        lst_points = df_points[(df_points['player_id'] == player_id) & (df_points['matchday'] > first_matchday)]['points'].to_list()
+        # Max und Min entfernen
+        if delete_peaks and len(lst_points) >= 3:
+            lst_points.remove(max(lst_points))
+            lst_points.remove(min(lst_points))
+        
+        avg_points.append(sum(lst_points)/avg_range)
+    df['avg_points'] = avg_points
     return df
 
 
 def main():
-    conn = get_sql_connection(DB_FILE)
     kb, user_me, league = get_kickbase_object()
     match_day = get_current_matchday(kb, league)
 
@@ -269,7 +289,8 @@ def main():
     delete_peaks = st.checkbox('Delete peaks in points (positive and negative)')
 
     data_load_state = st.text('Loading data...')
-    df = load_data(conn, match_day, avg_range, positions, delete_peaks, show_transfermarket)
+    df, df_points = load_data(positions, show_transfermarket)
+    df = calc_average(df, df_points, match_day, avg_range, delete_peaks)
     data_load_state.text("Done!")
 
     fig = px.scatter(df, x="avg_points", y="value",
@@ -293,16 +314,17 @@ def main():
 
     st.plotly_chart(fig, use_container_width=True)
     
-    if st.button('Update Marketvalue'):
-        db_update(conn, kb, league, False, False)
+    if st.button('Update Marketvalue/Status (ca. 20 s)'):
+        db_update(kb, league, False, False)
 
-    if st.button('Update Points (ca. 1 min)'):
-        db_update(conn, kb, league, True, False)
+    if st.button('Update Points (ca. 150 s)'):
+        db_update(kb, league, True, False)
     
     if st.checkbox('Show raw data'):
         st.subheader('Raw data')
         st.write(df)
+    
 
 
 if __name__ == "__main__":
-    main() 
+    main()
