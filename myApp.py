@@ -340,6 +340,11 @@ def main():
 
     st.plotly_chart(fig, use_container_width=True)
     
+    if st.checkbox('Show raw data'):
+        st.subheader('Raw data')
+        st.write(df)
+
+    st.subheader(f'Update Database')
     if st.button('Update Marketvalue/Status (ca. 15 s)'):
         players_list = get_player_info(kb, league_id, False, False)
         db_update_player(players_list)
@@ -348,9 +353,7 @@ def main():
         points_list = get_points_info(kb)
         db_update_points(points_list)
     
-    if st.checkbox('Show raw data'):
-        st.subheader('Raw data')
-        st.write(df)
+    
     
 
 
