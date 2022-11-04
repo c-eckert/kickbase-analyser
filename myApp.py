@@ -113,9 +113,7 @@ def load_data(positions, show_transfermarket):
     with engine.connect() as conn:
         df = pd.read_sql(sql_query, conn)
         df_points = pd.read_sql("SELECT * FROM punkte", conn)
-        now = datetime.now()
-        dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
-        return df, df_points, dt_string
+        return df, df_points
 
 
 
@@ -336,6 +334,9 @@ def update_data():
     thread = threading.Thread(target=database_thread, args=(kb, league_id))
     add_script_run_ctx(thread)
     thread.start()
+    now = datetime.now()
+    dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
+    return dt_string
 
 
 def main():
@@ -350,10 +351,10 @@ def main():
     delete_peaks = st.checkbox('Delete peaks in points (positive and negative)')
 
     data_load_state = st.text('Loading data...')
-    df, df_points, now = load_data(positions, show_transfermarket)
+    df, df_points = load_data(positions, show_transfermarket)
     df = calc_average(df, df_points, match_day, avg_range, delete_peaks)
 
-    data_load_state.text("Done! Data from " + now)
+    data_load_state.text("Done!")
 
     fig = px.scatter(df, x="avg_points", y="value",
         labels={
@@ -383,9 +384,8 @@ def main():
     st.subheader(f'Update Database')
 
     if st.button('Update Marketvalue/Status'):
-        update_data()
+        str_now = update_data()
         
-
 if __name__ == "__main__":
     start = time.time()
     main()
