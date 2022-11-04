@@ -231,10 +231,7 @@ def update_transfer(_kb, league_id, players_list):
 
 
 
-def db_update_player(players_list):
-    engine = sqlalchemy.create_engine(**st.secrets["sqlalchemy"])
-    metadata = MetaData()
-    metadata.reflect(bind=engine)
+def db_update_player(players_list, engine, metadata):
     table_spieler = metadata.tables["spieler"]
     #conn.execute(insert(my_table), players_list)
     u = update(table_spieler)
@@ -292,13 +289,8 @@ def request_points(_kb, points_list, player_id):
 
 
 
-def db_update_points(points_list):
-    engine = init_connection()
-    
-    metadata = MetaData()
-    metadata.reflect(bind=engine)
+def db_update_points(points_list, engine, metadata):
     table_punkte = metadata.tables["punkte"]
-
     i = insert(table_punkte)
     i = i.values({
         "matchday":     bindparam("d_matchday"),
@@ -311,23 +303,29 @@ def db_update_points(points_list):
         conn.execute(i, points_list)
 
 
+
 @st.experimental_singleton
 def init_lock():
     lock = threading.Lock()
     return lock
 
 
-def database_thread(kb, league_id, lock):
+
+def database_thread(kb, league_id):
     try:
+        start = time.time()
+        engine = sqlalchemy.create_engine(**st.secrets["sqlalchemy"])
+        metadata = MetaData()
+        metadata.reflect(bind=engine)
         print("Started thread...")
         players_list = get_player_info(kb, league_id)
-        db_update_player(players_list)
+        db_update_player(players_list, engine, metadata)
         points_list = get_points_info(kb)
-        db_update_points(points_list)
+        db_update_points(points_list, engine, metadata)
+        print(f"Thread Runtime = {time.time() - start}")
     
     finally:
         print("DB Updated (thread end)")
-        lock.release()
         update_data.clear()
 
 
@@ -335,11 +333,9 @@ def database_thread(kb, league_id, lock):
 def update_data():
     print("Running")
     kb, league_id = get_kickbase_object()
-    lock = init_lock()
-    if lock.acquire(blocking=False):
-        thread = threading.Thread(target=database_thread, args=(kb, league_id, lock))
-        add_script_run_ctx(thread, lock)
-        thread.start()
+    thread = threading.Thread(target=database_thread, args=(kb, league_id))
+    add_script_run_ctx(thread)
+    thread.start()
 
 
 def main():
