@@ -325,6 +325,7 @@ def database_thread(kb, league_id):
     finally:
         print("DB Updated (thread end)")
         update_data.clear()
+        load_data.clear()
 
 
 @st.experimental_singleton
