@@ -81,45 +81,36 @@ def get_kickbase_object():
     return kb, league_id
 
 
-
 def get_current_matchday(_kb, league_id):
     return _kb.league_stats(league_id).current_day
 
 
-@st.experimental_memo
-def construct_query(positions, show_transfermarket):
-    if len(positions) == 0:
-        if show_transfermarket:
-            return "SELECT * FROM spieler WHERE transfer = 1"
-        else:
-            return "SELECT * FROM spieler"
-    if len(positions) == 1:
-        if show_transfermarket:
-            return f"""SELECT * FROM spieler WHERE position = "{positions[0]}" AND transfer = 1"""
-        else:
-            return f"""SELECT * FROM spieler WHERE position = "{positions[0]}" """
-    
-    if show_transfermarket:
-        return f"SELECT * FROM spieler WHERE position IN {tuple(positions)} AND transfer = 1"
-
-    return f"SELECT * FROM spieler WHERE position IN {tuple(positions)}"
-
-
 # DataFrame (Pandas) holt sich Daten aus mysql-Datenbank
-@st.experimental_memo()
-def load_data(positions, show_transfermarket):
-    sql_query = construct_query(positions, show_transfermarket)
+@st.experimental_memo
+def load_from_db():
     engine = init_connection()
     with engine.connect() as conn:
-        df = pd.read_sql(sql_query, conn)
+        df = pd.read_sql("SELECT * FROM spieler", conn)
         df_points = pd.read_sql("SELECT * FROM punkte", conn)
-        return df, df_points
+        now = datetime.now()
+        dt_str = now.strftime("%d/%m/%Y %H:%M:%S")
+        return df, df_points, dt_str
 
+
+@st.experimental_memo
+def filter_df(df, positions, show_transfermarket):
+    if show_transfermarket:
+        df = df[df["transfer"] == 1]
+    
+    if len(positions) == 0:
+        return df
+    else:
+        return df[df["position"].isin(positions)]
 
 
 
 # aus df_points wird der schnitt berechnet und df als spalte angefügt
-@st.cache
+@st.experimental_memo
 def calc_average(df, df_points, next_matchday, avg_range, delete_peaks):
     first_matchday = next_matchday - avg_range
     avg_points = []
@@ -135,10 +126,17 @@ def calc_average(df, df_points, next_matchday, avg_range, delete_peaks):
     return df
 
 
+@st.experimental_singleton
+def init_time():
+    now = datetime.now()
+    dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
+    return dt_string
 
-####
-# Update Database
-####
+
+
+###################
+# Update Database #
+###################
 
 def db_delete_all():
     engine = init_connection()
@@ -178,7 +176,7 @@ def db_create():
  
 
 
-def get_player_info(_kb, league_id):
+def get_player_from_kb(_kb, league_id):
     players_list = []
     for team in BUNDESLIGA:
         players = _kb.team_players(team)
@@ -246,8 +244,7 @@ def db_update_player(players_list, engine, metadata):
         conn.execute(u, players_list)
 
 
-
-def get_points_info(_kb):
+def get_points_from_kb(_kb):
     points_list = []
     for team in BUNDESLIGA:
         players = _kb.team_players(team)
@@ -302,47 +299,50 @@ def db_update_points(points_list, engine, metadata):
 
 
 
-@st.experimental_singleton
-def init_lock():
-    lock = threading.Lock()
-    return lock
-
-
-
-def database_thread(kb, league_id):
+def database_thread(kb, league_id, update_points):
     try:
         start = time.time()
         engine = sqlalchemy.create_engine(**st.secrets["sqlalchemy"])
         metadata = MetaData()
         metadata.reflect(bind=engine)
         print("Started thread...")
-        players_list = get_player_info(kb, league_id)
-        db_update_player(players_list, engine, metadata)
-        points_list = get_points_info(kb)
-        db_update_points(points_list, engine, metadata)
+
+        if update_points:
+            points_list = get_points_from_kb(kb)
+            db_update_points(points_list, engine, metadata)
+
+        else:
+            players_list = get_player_from_kb(kb, league_id)
+            db_update_player(players_list, engine, metadata)
+
+        
+
         print(f"Thread Runtime = {time.time() - start}")
     
     finally:
         print("DB Updated (thread end)")
-        update_data.clear()
-        load_data.clear()
+        update_database.clear()
+        load_from_db.clear()
+
 
 
 @st.experimental_singleton
-def update_data():
+def update_database(update_points):
     print("Running")
     kb, league_id = get_kickbase_object()
-    thread = threading.Thread(target=database_thread, args=(kb, league_id))
+    
+    thread = threading.Thread(
+        target=database_thread, 
+        args=(kb, league_id, update_points)
+    )
     add_script_run_ctx(thread)
     thread.start()
-    now = datetime.now()
-    dt_string = now.strftime("%d/%m/%Y %H:%M:%S")
-    return dt_string
 
 
 def main():
     kb, league_id = get_kickbase_object()
     match_day = get_current_matchday(kb, league_id)
+    str_time = init_time()
 
     st.title('Kickbase Analyzer')
     st.subheader(f'Average Points ({str(match_day)}. Matchday)')
@@ -352,10 +352,13 @@ def main():
     delete_peaks = st.checkbox('Delete peaks in points (positive and negative)')
 
     data_load_state = st.text('Loading data...')
-    df, df_points = load_data(positions, show_transfermarket)
+    df, df_points, str_time = load_from_db()
+    
+    df = filter_df(df, positions, show_transfermarket)
     df = calc_average(df, df_points, match_day, avg_range, delete_peaks)
 
     data_load_state.text("Done!")
+    st.text("Last load from db: " + str_time)
 
     fig = px.scatter(df, x="avg_points", y="value",
         labels={
@@ -385,7 +388,10 @@ def main():
     st.subheader(f'Update Database')
 
     if st.button('Update Marketvalue/Status'):
-        str_now = update_data()
+        update_database(False)
+
+    if st.button('Update Points'):
+        update_database(True)
         
 if __name__ == "__main__":
     start = time.time()
