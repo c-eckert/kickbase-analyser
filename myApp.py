@@ -11,8 +11,8 @@ import plotly.express as px
 from kickbase_api.kickbase import Kickbase
 from kickbase_api.exceptions import KickbaseException
 
-import threading
-from datetime import datetime
+from threading import Timer
+from datetime import datetime, timedelta
 import time
 
 BUNDESLIGA = [2, 3, 4, 5, 7, 8, 9, 10, 11, 13, 14, 15, 18, 20, 24, 28, 40, 43]
@@ -81,8 +81,9 @@ def get_kickbase_object():
     return kb, league_id
 
 
-def get_current_matchday(_kb, league_id):
-    return _kb.league_stats(league_id).current_day
+def get_current_matchday():
+    kb, league_id = get_kickbase_object()
+    return kb.league_stats(league_id).current_day
 
 
 # DataFrame (Pandas) holt sich Daten aus mysql-Datenbank
@@ -299,49 +300,45 @@ def db_update_points(points_list, engine, metadata):
 
 
 
-def database_thread(kb, league_id, update_points):
+def database_thread(kb, league_id):
     try:
-        start = time.time()
         engine = sqlalchemy.create_engine(**st.secrets["sqlalchemy"])
         metadata = MetaData()
         metadata.reflect(bind=engine)
-        print("Started thread...")
 
-        if update_points:
-            points_list = get_points_from_kb(kb)
-            db_update_points(points_list, engine, metadata)
-
-        else:
-            players_list = get_player_from_kb(kb, league_id)
-            db_update_player(players_list, engine, metadata)
-
-        
-
-        print(f"Thread Runtime = {time.time() - start}")
+        players_list = get_player_from_kb(kb, league_id)
+        db_update_player(players_list, engine, metadata)
+        points_list = get_points_from_kb(kb)
+        db_update_points(points_list, engine, metadata)
     
     finally:
-        print("DB Updated (thread end)")
-        update_database.clear()
+        engine.dispose()
+        start_timer.clear()
         load_from_db.clear()
+        start_timer()
 
 
-
+# Start update thread every hour
 @st.experimental_singleton
-def update_database(update_points):
-    print("Running")
+def start_timer():
     kb, league_id = get_kickbase_object()
-    
-    thread = threading.Thread(
-        target=database_thread, 
-        args=(kb, league_id, update_points)
+    now = datetime.today()
+    then = now.replace(day=now.day, hour=now.hour, minute=0, second=0, microsecond=0) + timedelta(hours=1)
+    delta_t = then - now
+    secs = delta_t.total_seconds()
+
+    t = Timer(secs,
+        database_thread, 
+        args=(kb, league_id)
     )
-    add_script_run_ctx(thread)
-    thread.start()
+    add_script_run_ctx(t)
+    t.start()
+
 
 
 def main():
-    kb, league_id = get_kickbase_object()
-    match_day = get_current_matchday(kb, league_id)
+    start_timer()
+    match_day = get_current_matchday()
     str_time = init_time()
 
     st.title('Kickbase Analyzer')
@@ -386,12 +383,6 @@ def main():
         st.write(df)
 
     st.subheader(f'Update Database')
-
-    if st.button('Update Marketvalue/Status'):
-        update_database(False)
-
-    if st.button('Update Points'):
-        update_database(True)
         
 if __name__ == "__main__":
     start = time.time()
