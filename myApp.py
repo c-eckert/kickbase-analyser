@@ -342,20 +342,22 @@ def main():
     str_time = init_time()
 
     st.title('Kickbase Analyzer')
+
     st.subheader(f'Average Points ({str(match_day)}. Matchday)')
+
     avg_range = st.slider("Select how many matchdays will count", 1, match_day, 5)
+
     positions = st.multiselect('Select whitch positions to show', ['TW', 'ABW', 'MIT', 'ANG'], [])
+
     show_transfermarket = st.checkbox('Show only transfermarket', False)
+
     delete_peaks = st.checkbox('Delete peaks in points (positive and negative)')
 
     data_load_state = st.text('Loading data...')
     df, df_points, str_time = load_from_db()
-    
     df = filter_df(df, positions, show_transfermarket)
     df = calc_average(df, df_points, match_day, avg_range, delete_peaks)
-
     data_load_state.text("Done!")
-    st.text("Last load from db: " + str_time)
 
     fig = px.scatter(df, x="avg_points", y="value",
         labels={
@@ -375,14 +377,14 @@ def main():
             "<b>%{y}</b>"
             ])
         )
-
     st.plotly_chart(fig, use_container_width=True)
+
+    st.text("Last load from db: " + str_time)
     
     if st.checkbox('Show raw data'):
         st.subheader('Raw data')
         st.write(df)
 
-    st.subheader(f'Update Database')
         
 if __name__ == "__main__":
     start = time.time()
