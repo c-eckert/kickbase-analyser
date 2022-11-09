@@ -85,7 +85,7 @@ def start_timer():
 
 
 def main():
-    #start_timer()
+    start_timer()
     st.set_page_config(
         page_title="Spieler Analyse",
         page_icon="🧐"
