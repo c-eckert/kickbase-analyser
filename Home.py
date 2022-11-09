@@ -85,12 +85,11 @@ def start_timer():
 
 
 def main():
-    
     st.set_page_config(
         page_title="Spieler Analyse",
         page_icon="🧐"
     )
-    start_timer()
+    #start_timer()
     st.sidebar.success("Select a demo above.")
     
     match_day = myKickbase.get_current_matchday()
