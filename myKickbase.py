@@ -34,9 +34,9 @@ POSITION_DICT = {
 }
 
 TRENT_DICT = {
-    0 : "o", 
-    1 : "+", 
-    2 : "-"
+    0 : "➡️", 
+    1 : "↗️", 
+    2 : "↘️"
 }
 
 STATUS_DICT = {
