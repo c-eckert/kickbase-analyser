@@ -75,8 +75,8 @@ def main():
                             y=alt.Y("d_points:Q", axis=alt.Axis(labels=True, domain=False, ticks=False), title=None),
                             color=alt.condition(
                                 alt.datum.d_points > 100,
-                                alt.value("#ea5f42"),
-                                alt.value("#22c48b")
+                                alt.value("#22c48b"),
+                                alt.value("#ea5f42")
                                 )
                             )
 
