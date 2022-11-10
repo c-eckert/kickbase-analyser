@@ -1,5 +1,6 @@
 import streamlit as st
-import numpy as np
+import pandas as pd
+import plotly.express as px
 import myKickbase
 
 
@@ -59,6 +60,15 @@ def main():
                     </table>
                     <div height="10"></div>
                 """, unsafe_allow_html=True)
+                with st.expander("View Points"):
+                    points_list = []
+                    player_id = int(kb._get_player_id(user_player))
+                    myKickbase.request_points(kb, points_list, player_id)
+                    df = pd.DataFrame(points_list)
+                    print(df)
+                    if len(df) > 0:
+                        fig = px.bar(df, x="d_matchday", y="d_points", color="d_points", color_discrete_sequence=["red", "green"])
+                        st.plotly_chart(fig)
     
     st.sidebar.subheader("Value of selected Players")
     sum_values = sum([a*b for a,b in zip(counting_value,values)])
