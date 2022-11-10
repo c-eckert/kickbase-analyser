@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import myKickbase
+import altair as alt
 
 
 
@@ -32,9 +33,9 @@ def main():
         st.subheader(myKickbase.POSITION_DICT[position])
         for i, user_player in enumerate(user_players):
             if user_player.position == position:
-                btn = st.checkbox("Sell", key=i)
-                if btn:
-                    counting_value[i] = 1
+                #btn = st.checkbox("Sell", key=i)
+                #if btn:
+                #    counting_value[i] = 1
                 st.markdown(f"""
                     <table style="padding: 1%;">
                         <tr style="border: 0px;">
@@ -60,16 +61,51 @@ def main():
                     </table>
                     <div height="10"></div>
                 """, unsafe_allow_html=True)
+                
                 with st.expander("View Points"):
                     points_list = []
                     player_id = int(kb._get_player_id(user_player))
                     myKickbase.request_points(kb, points_list, player_id)
                     df = pd.DataFrame(points_list)
-                    print(df)
+                    df["color"] = df.apply(lambda row: "green" if row.d_points>100 else "red", axis=1)
+
                     if len(df) > 0:
-                        fig = px.bar(df, x="d_matchday", y="d_points", color="d_points", color_discrete_sequence=["red", "green"])
-                        st.plotly_chart(fig)
-    
+
+                        c = alt.Chart(df).mark_bar().encode(
+                            x=alt.X("d_matchday:O", axis=alt.Axis(labels=True), title=None), 
+                            y=alt.Y("d_points:Q", axis=alt.Axis(labels=True, domain=False, ticks=False), title=None),
+                            color=alt.condition(
+                                alt.datum.d_points > 100,
+                                alt.value("green"),
+                                alt.value("red")
+                                )
+                            )
+
+                        text = c.mark_text(
+                            baseline='bottom',
+                        ).encode(
+                            text='d_points:Q'
+                        )
+
+                        layer = alt.layer(c, text).configure_view(stroke="transparent")
+
+
+                        st.altair_chart(layer, use_container_width=True)
+
+
+                        #fig = px.bar(
+                        #    df, x="d_matchday", y="d_points", text_auto=True,
+                        #    labels={
+                        #        "d_points": "Points",
+                        #        "d_matchday": "Matchday",
+                        #        "user": "User",
+                        #    }
+                        #)
+                        #fig.update_traces(marker_color=df["color"])
+                        #fig.update_layout(plot_bgcolor="rgba(0,0,0,0)")
+                       # 
+                       # st.plotly_chart(fig, use_container_width=True)
+                        
     st.sidebar.subheader("Value of selected Players")
     sum_values = sum([a*b for a,b in zip(counting_value,values)])
     st.sidebar.text(f"{sum_values:,} €")
