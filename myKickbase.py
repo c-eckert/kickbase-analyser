@@ -34,7 +34,7 @@ POSITION_DICT = {
 }
 
 
-TRENT_DICT = {
+TREND_DICT = {
     0 : "➡️", 
     1 : "↗️", 
     2 : "↘️"

@@ -48,7 +48,7 @@ def main():
                                 <div class="row_num">
                                     <div class="column_left">{user_player.totalPoints}</div>
                                     <div class="column_left">{user_player.average_points}</div>
-                                    <div class="column_right">{myKickbase.TRENT_DICT[user_player.market_value_trend]} {int(user_player.market_value):,}€</div>
+                                    <div class="column_right">{myKickbase.TREND_DICT[user_player.market_value_trend]} {int(user_player.market_value):,}€</div>
                                 </div>
                                 <div class="row_lab">
                                     <div class="column_left">Pkt.</div>

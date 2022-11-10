@@ -9,12 +9,12 @@ import time
 import myDatabase
 import myKickbase
 
-
+@st.experimental_memo
 def replace_df(df):
-    df["d_value_trend"] = df["d_value_trend"].map(myKickbase.TRENT_DICT)
-    df["d_team"] = df["d_team"].map(myKickbase.TEAM_DICT)
-    df["d_position"] = df["d_position"].map(myKickbase.POSITION_DICT)
-    df["d_status"] = df["d_status"].map(myKickbase.STATUS_DICT)
+    df["value_trend"] = df["value_trend"].map(myKickbase.TREND_DICT)
+    df["team"] = df["team"].map(myKickbase.TEAM_DICT)
+    df["position"] = df["position"].map(myKickbase.POSITION_DICT)
+    df["status"] = df["status"].map(myKickbase.STATUS_DICT)
     return df
 
 
@@ -96,7 +96,7 @@ def main():
         page_title="Spieler Analyse",
         page_icon="🧐"
     )
-    start_timer()
+    #start_timer()
     st.sidebar.success("Select a demo above.")
     
     match_day = myKickbase.get_current_matchday()
