@@ -10,6 +10,13 @@ import myDatabase
 import myKickbase
 
 
+def replace_df(df):
+    df["d_value_trend"] = df["d_value_trend"].map(myKickbase.TRENT_DICT)
+    df["d_team"] = df["d_team"].map(myKickbase.TEAM_DICT)
+    df["d_position"] = df["d_position"].map(myKickbase.POSITION_DICT)
+    df["d_status"] = df["d_status"].map(myKickbase.STATUS_DICT)
+    return df
+
 
 @st.experimental_memo
 def filter_df(df, positions, show_transfermarket):
@@ -109,6 +116,7 @@ def main():
 
     data_load_state = st.text('Loading data...')
     df, df_points, str_time = myDatabase.select_all()
+    df = replace_df(df)
     df = filter_df(df, positions, show_transfermarket)
     df = calc_average(df, df_points, match_day, avg_range, delete_peaks)
     data_load_state.text("Done!")

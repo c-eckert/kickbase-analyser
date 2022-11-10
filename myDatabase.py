@@ -22,8 +22,7 @@ def init_connection():
 def drop_all():
     engine, metadata = init_connection()
     with engine.connect() as conn:
-        conn.execute("DROP TABLE IF EXISTS spieler")
-        conn.execute("DROP TABLE IF EXISTS punkte")
+        conn.execute("DROP TABLE IF EXISTS spieler, punkte")
 
 
 def create_all():
@@ -31,24 +30,24 @@ def create_all():
     with engine.connect() as conn:
         sql_command = """
         CREATE TABLE IF NOT EXISTS spieler (
-            player_id   INTEGER     PRIMARY KEY,
-            last_name   TEXT,
-            first_name  TEXT,
-            value       INTEGER,
-            value_trend TEXT,
-            team        TEXT,
-            position    TEXT,
-            status      TEXT,
-            user        TEXT,
-            transfer    BOOL
+            player_id   INTEGER     NOT NULL PRIMARY KEY,
+            last_name   TEXT        NOT NULL,
+            first_name  TEXT        NOT NULL,
+            value       INTEGER     NOT NULL,
+            value_trend INTEGER     NOT NULL,
+            team        INTEGER     NOT NULL,
+            position    INTEGER     NOT NULL,
+            status      INTEGER     NOT NULL,
+            user        TEXT        NOT NULL,
+            transfer    BOOL        NOT NULL
         )"""
         conn.execute(sql_command)
 
         sql_command = """
         CREATE TABLE IF NOT EXISTS punkte (
-            matchday    INTEGER,
-            points      INTEGER,
-            player_id   INTEGER,
+            matchday    INTEGER     NOT NULL,
+            points      INTEGER     NOT NULL,
+            player_id   INTEGER     NOT NULL,
             PRIMARY KEY (matchday, player_id),
             FOREIGN KEY (player_id) REFERENCES spieler(player_id)
         )"""
@@ -65,6 +64,25 @@ def select_all():
         now = datetime.now()
         dt_str = now.strftime("%d/%m/%Y %H:%M:%S")
         return df, df_points, dt_str
+
+
+def insert_player(players_list, engine, metadata):
+    table_spieler = metadata.tables["spieler"]
+    i = insert(table_spieler)
+    i = i.values({
+        "player_id":    bindparam("d_player_id"),
+        "last_name":    bindparam("d_last_name"),
+        "first_name":   bindparam("d_first_name"),
+        "value":        bindparam("d_value"),
+        "value_trend":  bindparam("d_value_trend"),
+        "team":         bindparam("d_team"),
+        "position":     bindparam("d_position"),
+        "status":       bindparam("d_status"),
+        "user":         bindparam("d_user"),
+        "transfer":     bindparam("d_transfer")
+    })
+    with engine.connect() as conn:
+        conn.execute(i, players_list)
 
 
 def update_player(players_list, engine, metadata):

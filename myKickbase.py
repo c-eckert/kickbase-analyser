@@ -33,6 +33,7 @@ POSITION_DICT = {
     4 : "ANG"
 }
 
+
 TRENT_DICT = {
     0 : "➡️", 
     1 : "↗️", 
@@ -75,16 +76,15 @@ def get_player_from_kb(_kb, league_id):
     for team in BUNDESLIGA:
         players = _kb.team_players(team)
         for p in players:
-            player_id = int(_kb._get_player_id(p))
             player_dict = {
-               "d_player_id"   : player_id, 
+               "d_player_id"   : int(_kb._get_player_id(p)), 
                "d_last_name"   : p.last_name, 
                "d_first_name"  : p.first_name, 
                "d_value"       : int(p.market_value), 
-               "d_value_trend" : TRENT_DICT[int(p.market_value_trend)], 
-               "d_team"        : TEAM_DICT[team], 
-               "d_position"    : POSITION_DICT[int(p.position)], 
-               "d_status"      : STATUS_DICT[int(p.status)], 
+               "d_value_trend" : int(p.market_value_trend), 
+               "d_team"        : int(team), 
+               "d_position"    : int(p.position), 
+               "d_status"      : int(p.status), 
                "d_user"        : "Free", 
                "d_transfer"    : False
             }
