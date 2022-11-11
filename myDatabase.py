@@ -87,7 +87,6 @@ def insert_player(players_list, engine, metadata):
 
 def update_player(players_list, engine, metadata):
     table_spieler = metadata.tables["spieler"]
-    #conn.execute(insert(my_table), players_list)
     u = update(table_spieler)
     u = u.where(table_spieler.c.player_id == bindparam("d_player_id"))
     u = u.values({

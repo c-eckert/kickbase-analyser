@@ -58,11 +58,12 @@ def init_time():
 
 def database_thread(kb, league_id):
     try:
-        engine, metadata = myDatabase.init_connection()
-
         players_list = myKickbase.get_player_from_kb(kb, league_id)
-        myDatabase.update_player(players_list, engine, metadata)
         points_list = myKickbase.get_points_from_kb(kb)
+        
+        
+        engine, metadata = myDatabase.init_connection()
+        myDatabase.update_player(players_list, engine, metadata)
         myDatabase.update_points(points_list, engine, metadata)
     
     finally:
@@ -128,7 +129,9 @@ def main():
             "user": "User",
         },
         color="user",
-        custom_data=["last_name", "first_name", "position", "status", "team"]
+        custom_data=["last_name", "first_name", "position", "status", "team"],
+        trendline="ols",
+        trendline_scope="overall"
         )
     fig.update_traces(
         hovertemplate="<br>".join([
@@ -138,6 +141,25 @@ def main():
             "%{customdata[4]}",
             "<b>%{y}</b>"
             ])
+        )
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)", 
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin = dict(
+            l=0,
+            r=0,
+            b=0,
+            t=0,
+            pad=0
+        ),
+        #yaxis_visible=False,
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.2,
+            xanchor="left",
+            x=0
+        )
         )
     st.plotly_chart(fig, use_container_width=True)
 
