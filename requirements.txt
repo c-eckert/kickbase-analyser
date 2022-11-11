@@ -2,3 +2,4 @@ Kickbase-API
 plotly
 sqlalchemy
 pymysql
+statsmodels
