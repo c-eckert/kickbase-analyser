@@ -144,7 +144,7 @@ def main():
         )
     fig.update_layout(
         paper_bgcolor="rgba(0,0,0,0)", 
-        plot_bgcolor="rgba(0,0,0,0)",
+       # plot_bgcolor="rgba(0,0,0,0)",
         margin = dict(
             l=0,
             r=0,
