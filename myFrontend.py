@@ -41,10 +41,9 @@ def points_diagram(kb, player):
     myKickbase.request_points(kb, points_list, player_id)
     df = pd.DataFrame(points_list)
     df["color"] = df.apply(lambda row: "green" if row.d_points>100 else "red", axis=1)
-
+    
     if len(df) > 0:
-
-        c = alt.Chart(df).mark_bar().encode(
+        c = alt.Chart(df).mark_bar(size=10).encode(
             x=alt.X("d_matchday:O", axis=alt.Axis(labels=True), title=None), 
             y=alt.Y("d_points:Q", axis=alt.Axis(labels=True, domain=False, ticks=False), title=None),
             color=alt.condition(
@@ -52,6 +51,8 @@ def points_diagram(kb, player):
                 alt.value("#22c48b"),
                 alt.value("#ea5f42")
                 )
+            ).properties(
+                height=150
             )
 
         text = c.mark_text(
