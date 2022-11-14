@@ -1,41 +1,33 @@
 import streamlit as st
-import pandas as pd
 import myKickbase
+import pandas as pd
 from myFrontend import player_row, points_diagram
 
 
+
 def main():
-    st.set_page_config(page_title="Your Team", page_icon="📈")
+    st.set_page_config(page_title="Transfermarket", page_icon="📈")
     
     with open('style.css') as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-    st.markdown("# Your Team")
+    st.markdown("# Transfermarket")
     st.sidebar.subheader("Team value")
 
     kb, league_id = myKickbase.get_kickbase_object()
-    users = kb.league_users(league_id)
-    user_names = [user.name for user in users]
-    user_ids = [user.id for user in users]
-    user_dict = dict(zip(user_names, user_ids))
-    selcted_user = st.selectbox(
-        'Which team do you want to see?',
-        user_dict
-    )
+    market = kb.market(league_id)
+    market_players = market.players
 
-    user_players = kb.league_user_players(league_id, user_dict[selcted_user])
-    counting_value = [0]*len(user_players)
-    values = [int(p.market_value) for p in user_players]
-    
-    st.sidebar.text(f"{sum(values):,} €")
-    
-    
-    df = pd.DataFrame(user_players, columns=["objects"])
-    df["value"] = [int(p.market_value) for p in user_players]
-    df["totalPoints"] = [int(p.totalPoints) for p in user_players]
-    df["average_points"] = [int(p.average_points) for p in user_players]
-    df["position"] = [int(p.position) for p in user_players]
+    counting_value = [0]*len(market_players)
+    values = [int(p.market_value) for p in market_players]
 
+    
+    df = pd.DataFrame(market_players, columns=["objects"])
+    df["value"] = [int(p.market_value) for p in market_players]
+    df["totalPoints"] = [int(p.totalPoints) for p in market_players]
+    df["average_points"] = [int(p.average_points) for p in market_players]
+    df["position"] = [int(p.position) for p in market_players]
+    
     sort_by = st.radio(
         "Sort by", ("Position", "Value", "Avg Points", "Total Points")
     )
@@ -43,11 +35,11 @@ def main():
     if sort_by == "Position":
         for position in myKickbase.POSITION_DICT:
             st.subheader(myKickbase.POSITION_DICT[position])
-            for i, user_player in enumerate(user_players):
+            for i, user_player in enumerate(market_players):
                 if user_player.position == position:
-                    #btn = st.checkbox("Sell", key=i)
-                    #if btn:
-                    #    counting_value[i] = 1
+                    btn = st.checkbox("Sell", key=i)
+                    if btn:
+                        counting_value[i] = 1
                     
                     player_row(user_player)
 
@@ -73,5 +65,7 @@ def main():
     st.sidebar.subheader("Value of selected Players")
     sum_values = sum([a*b for a,b in zip(counting_value,values)])
     st.sidebar.text(f"{sum_values:,} €")
+
+
 if __name__ == "__main__":
     main()
