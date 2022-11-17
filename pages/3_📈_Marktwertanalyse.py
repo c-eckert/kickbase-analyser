@@ -1,10 +1,11 @@
 import streamlit as st
+from streamlit.runtime.scriptrunner import add_script_run_ctx
 import myKickbase
 from kickbase_api.exceptions import KickbaseException
 import pandas as pd
 from datetime import datetime
 import plotly.express as px
-from threading import Thread
+from threading import Thread, Lock
 import concurrent
 from queue import Queue
 import time
@@ -97,9 +98,11 @@ def get_threadpool(_kb):
                 points_list.append(result)
     return points_list
 
+# Variant 1
 @st.experimental_memo(ttl=60*30)
-def get_points_from_kb(_kb):
+def get_points_from_kb_1(_kb):
     print("Start")
+    print(time.time() - start)
     queue = Queue()
     threads = []
     for team in myKickbase.BUNDESLIGA:
@@ -107,13 +110,18 @@ def get_points_from_kb(_kb):
         for p in players:
             player_id = int(_kb._get_player_id(p))
             worker = DownloadWorker(queue, _kb, player_id)
+            add_script_run_ctx(worker)
             threads.append(worker)
+    print("Initialised")
+    print(time.time() - start)   
     for t in threads:
         t.start()
-    print("Running")
+    print("Started")
+    print(time.time() - start)
     for t in threads:
         t.join()
-    print("Done")
+    print("Joined")
+    print(time.time() - start)
     points_list = []
 
     while not queue.empty():
@@ -157,7 +165,89 @@ class DownloadWorker(Thread):
             }
             self.queue.put(player_dict)
 
+
+
+
+# Variant 2
+
+
+class ItemStore(object):
+    def __init__(self) -> None:
+        self.lock = Lock()
+        self.items = []
     
+    def add(self, item):
+        with self.lock:
+            self.items.append(item)
+
+    def getAll(self):
+        return self.items
+
+
+concurrent = 24
+locked_list = ItemStore()
+q_id = Queue()
+
+def doWork(kb):
+    while True:
+        player_id = q_id.get()
+        getPoints(kb, player_id)
+        q_id.task_done()
+    
+
+def getPoints(kb, player_id):
+    r = kb._do_get("/players/{}/points".format(player_id), True)
+
+    if r.status_code != 200:
+        raise KickbaseException()
+
+    if "s" not in r.json(): 
+        return
+    
+    if not r.json()["s"]: 
+        return # Array is empty
+
+    if r.json()["s"][-1]["t"] != "2022/2023":
+        return # no current season
+    
+    season = r.json()["s"][-1]["m"]
+    
+    for match in season:
+        matchday = match["d"]
+        points = match["p"]
+        player_dict = {
+            "d_matchday"  : matchday,
+            "d_points"    : points,
+            "d_player_id" : player_id,
+        }
+        locked_list.add(player_dict)
+
+
+
+
+@st.experimental_memo(ttl=60*30)
+def get_points_from_kb_2(_kb):
+    for i in range(concurrent):
+        t = Thread(target=doWork, args=[_kb])
+        add_script_run_ctx(t)
+        t.daemon = True
+        t.start()
+
+    for team in myKickbase.BUNDESLIGA:
+        players = _kb.team_players(team)
+        for p in players:
+            player_id = int(_kb._get_player_id(p))
+            q_id.put(player_id)
+    q_id.join()
+    
+    points_list = locked_list.getAll()
+
+    return points_list
+
+
+
+
+
 
 def main():
     st.set_page_config(page_title="Marktwertanalyse", page_icon="📈")
@@ -192,7 +282,7 @@ def main():
         'd_user': 'user',
         'd_transfer': 'transfer'}, axis=1)
 
-    points_list = get_points_from_kb(kb)
+    points_list = get_points_from_kb_2(kb)
     #points_list = get_threadpool(kb)
     #print(points_list)
     df_points = pd.DataFrame(points_list)
