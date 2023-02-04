@@ -7,8 +7,6 @@ from threading import Thread, Lock
 from queue import Queue
 from time import time
 
-import os
-
 import myKickbase
 
 @st.experimental_memo
@@ -100,11 +98,11 @@ def getPoints(kb, player_id, points_list):
 
 
 @st.experimental_memo(ttl=60*30)
-def get_points_from_kb(_kb, player_ids, no_threads):
+def get_points_from_kb(_kb, player_ids):
     queue = Queue() # queue mit allen PlayerIDs
     points_list = MyQueue()
     
-    for _ in range(no_threads):
+    for _ in range(32):
         consumer_thread = Thread(target=consumer, args=[_kb, queue, points_list])
         add_script_run_ctx(consumer_thread)
         consumer_thread.start()
@@ -132,8 +130,6 @@ def main():
     data_load_state = st.text('Loading data...')
     
     t_A = f"UI:  {time() - start}"
-    
-    no_threads = st.number_input("Threads", 1, 120, 24)
 
     players_list = myKickbase.get_player_from_kb(kb, league_id)
     df = pd.DataFrame(players_list)
@@ -151,7 +147,7 @@ def main():
     
     t_B = f"Pla: {time() - start}"
 
-    points_list = get_points_from_kb(kb, df['player_id'], no_threads)
+    points_list = get_points_from_kb(kb, df['player_id'])
 
     df_points = pd.DataFrame(points_list)
     df_points = df_points.rename({
