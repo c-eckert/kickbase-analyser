@@ -70,7 +70,7 @@ def get_current_matchday():
     return kb.league_stats(league_id).current_day
 
 
-
+@st.experimental_memo
 def get_player_from_kb(_kb, league_id):
     players_list = []
     for team in BUNDESLIGA:
