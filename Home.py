@@ -1,4 +1,10 @@
 import streamlit as st
+
+st.set_page_config(
+    page_title="Marktwertanalyse", 
+    page_icon="📈"
+)
+
 from streamlit.runtime.scriptrunner import add_script_run_ctx
 import pandas as pd
 import plotly.express as px
@@ -9,7 +15,9 @@ from time import time
 
 import myKickbase
 
-@st.experimental_memo
+
+
+@st.cache_data
 def replace_df(df):
     df["value_trend"] = df["value_trend"].map(myKickbase.TREND_DICT)
     df["team"] = df["team"].map(myKickbase.TEAM_DICT)
@@ -18,7 +26,7 @@ def replace_df(df):
     return df
 
 
-@st.experimental_memo
+@st.cache_data
 def filter_df(df, positions, show_transfermarket):
     if show_transfermarket:
         df = df[df["transfer"] == 1]
@@ -30,7 +38,7 @@ def filter_df(df, positions, show_transfermarket):
 
 
 # aus df_points wird der schnitt berechnet und df als spalte angefügt
-@st.experimental_memo
+@st.cache_data
 def calc_average(df, df_points, next_matchday, avg_range, delete_peaks):
     first_matchday = next_matchday - avg_range
     avg_points = []
@@ -97,7 +105,7 @@ def getPoints(kb, player_id, points_list):
         points_list.add(player_dict)
 
 
-@st.experimental_memo(ttl=60*30)
+@st.cache_data(ttl=60*30)
 def get_points_from_kb(_kb, player_ids):
     queue = Queue() # queue mit allen PlayerIDs
     points_list = MyQueue()
@@ -113,17 +121,17 @@ def get_points_from_kb(_kb, player_ids):
 
 
 def main():
-    st.set_page_config(
-        page_title="Marktwertanalyse", 
-        page_icon="📈"
-    )
+    print("----------------------")
+    start = time()
 
     kb, league_id = myKickbase.get_kickbase_object()
     match_day = myKickbase.get_current_matchday()
 
     st.title('Kickbase Analyzer')
     st.subheader(f'Average Points ({str(match_day)}. Matchday)')
-    avg_range = st.slider("Select how many matchdays will count", 1, match_day, 5)
+    is_unspecified_avg = st.checkbox('unspecified avg')
+    if not is_unspecified_avg:
+        avg_range = st.slider("Select how many matchdays will count", 1, match_day, 2)
     positions = st.multiselect('Select whitch positions to show', ['TW', 'ABW', 'MIT', 'ANG'], [])
     show_transfermarket = st.checkbox('Show only transfermarket', False)
     delete_peaks = st.checkbox('Delete peaks in points (positive and negative)')
@@ -138,7 +146,8 @@ def main():
         'd_last_name': 'last_name', 
         'd_first_name': 'first_name', 
         'd_value': 'value', 
-        'd_value_trend': 'value_trend', 
+        'd_value_trend': 'value_trend',
+        'd_avg_points' : 'avg_points',
         'd_team': 'team',
         'd_position': 'position',
         'd_status': 'status',
@@ -147,20 +156,22 @@ def main():
     
     t_B = f"Pla: {time() - start}"
 
-    points_list = get_points_from_kb(kb, df['player_id'])
+    if is_unspecified_avg:
+        df = replace_df(df)
+        df = filter_df(df, positions, show_transfermarket)
 
-    df_points = pd.DataFrame(points_list)
-    df_points = df_points.rename({
-        'd_matchday': 'matchday',
-        'd_points': 'points',
-        'd_player_id': 'player_id'}, axis=1)
+    else:
+        points_list = get_points_from_kb(kb, df['player_id'])
+        df_points = pd.DataFrame(points_list)
+        df_points = df_points.rename({
+            'd_matchday': 'matchday',
+            'd_points': 'points',
+            'd_player_id': 'player_id'}, axis=1)
+        
+        df = replace_df(df)
+        df = filter_df(df, positions, show_transfermarket)
+        df = calc_average(df, df_points, match_day, avg_range, delete_peaks)
     
-    t_C = f"Poi: {time() - start}"
-
-
-    df = replace_df(df)
-    df = filter_df(df, positions, show_transfermarket)
-    df = calc_average(df, df_points, match_day, avg_range, delete_peaks)
     data_load_state.text("Done!")
     
     fig = px.scatter(df, x="avg_points", y="value",
@@ -205,11 +216,9 @@ def main():
     t_D = f"END: {time() - start}"
     st.text(str(t_A))
     st.text(str(t_B))
-    st.text(str(t_C))
     st.text(str(t_D))
 
-if __name__ == "__main__":
-    print("----------------------")
-    start = time()
-    main()
     print(f"END: {time() - start}")
+
+if __name__ == "__main__":
+    main()

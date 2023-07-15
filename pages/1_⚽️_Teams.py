@@ -5,12 +5,12 @@ from myFrontend import player_row, points_diagram
 
 
 def main():
-    st.set_page_config(page_title="Your Team", page_icon="📈")
+    st.set_page_config(page_title="Teams", page_icon="⚽️")
     
     with open('style.css') as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-    st.markdown("# Your Team")
+    st.markdown("# Teams")
     st.sidebar.subheader("Team value")
 
     kb, league_id = myKickbase.get_kickbase_object()

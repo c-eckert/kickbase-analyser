@@ -35,6 +35,38 @@ def player_row(player):
         </table>
     """, unsafe_allow_html=True)
 
+def player_row_short(player):
+    if player.status == 0:
+        color = "#22c48b" # green
+    else:
+        color = "#ea5f42" # red
+    st.markdown(f"""
+        <div class="short_player_row">
+            <table>
+                <tr style="border: 0px;">
+                    <td width="40%" style="border: 0px; padding: 0.3% 1%;">   
+                        <div class="parallelogram">{player.number}</div>
+                        <div class="parallelogram">{myKickbase.POSITION_DICT[player.position]}</div>
+                        <div class="parallelogram" style="background: {color};">{myKickbase.STATUS_DICT[player.status]}</div>
+                        <div class="last_name">{player.last_name}</div>
+                    </td>
+                    <td width="60%" style="border: 0px; padding: 1%;">
+                        <div class="row_num">
+                            <div class="column_left">{player.totalPoints}</div>
+                            <div class="column_left">{player.average_points}</div>
+                            <div class="column_right" style="color:{myKickbase.TREND_COLOR_DICT[player.market_value_trend]} ;">{int(player.market_value):,}€</div>
+                        </div>
+                        <div class="row_lab">
+                            <div class="column_left">Pkt.</div>
+                            <div class="column_left">⌀ Pkt.</div>
+                            <div class="column_right">Marktwert</div>
+                        </div>
+                    </td>
+                </tr>
+            </table>
+        </div>
+    """, unsafe_allow_html=True)
+
 def points_diagram(kb, player):
     points_list = []
     player_id = int(kb._get_player_id(player))

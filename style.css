@@ -59,3 +59,50 @@ table {
     font-size: calc(0.5rem + 0.5vw);
     line-height: 1;
 }
+
+
+
+.short_player_row .parallelogram {
+  padding: 0.1rem 0.2rem;
+  font-size: calc(0.5rem + 0.5vw );
+  background: rgba(100, 100, 100, .7);
+  transform: skew(-10deg);
+  color: white;
+  font-weight: 1000;
+  display: inline-block;
+  line-height: 1;
+}
+
+.short_player_row table {
+  border: 1px solid rgba(100, 100, 100, .5);
+  border-collapse: separate;
+  border-radius: 10px;
+  padding: 0%;
+  width: 100%;
+}
+
+.short_player_row .last_name {
+    font-weight: 700;
+    font-size: calc(1.1rem + 0.5vw);
+  }
+
+.short_player_row .column_left {
+    float: left;
+    width: 25%;
+  }
+
+.short_player_row .column_right {
+    float: left;
+    width: 50%;
+    text-align: right;
+  }
+
+.short_player_row .row_num {
+    font-weight: 1000;
+    font-size: calc(0.8rem + 0.5vw);
+}
+
+.short_player_row .row_lab {
+    opacity: 50%;
+    font-size: calc(0.5rem + 0.5vw);
+}

@@ -40,6 +40,12 @@ TREND_DICT = {
     2 : "↘️"
 }
 
+TREND_COLOR_DICT = {
+    0 : "orange", 
+    1 : "green", 
+    2 : "red"
+}
+
 STATUS_DICT = {
     0 : "FIT",
     1 : "VERLETZT",
@@ -56,11 +62,11 @@ STATUS_DICT = {
 
 
 
-@st.experimental_singleton
+@st.cache_resource
 def get_kickbase_object():
     kb = Kickbase()
     user_me, league = kb.login(st.secrets.kickbase_credentials.username, st.secrets.kickbase_credentials.password)
-    league_id = kb._get_league_id(league[0])
+    league_id = kb._get_league_id(league[2])
     return kb, league_id
 
 
@@ -70,18 +76,21 @@ def get_current_matchday():
     return kb.league_stats(league_id).current_day
 
 
-@st.experimental_memo
+@st.cache_data
 def get_player_from_kb(_kb, league_id):
     players_list = []
     for team in BUNDESLIGA:
         players = _kb.team_players(team)
         for p in players:
+            if not p.market_value:
+                continue # wegen Kozuki
             player_dict = {
                "d_player_id"   : int(_kb._get_player_id(p)), 
                "d_last_name"   : p.last_name, 
                "d_first_name"  : p.first_name, 
                "d_value"       : int(p.market_value), 
-               "d_value_trend" : int(p.market_value_trend), 
+               "d_value_trend" : int(p.market_value_trend),
+               "d_avg_points"  : int(p.average_points),
                "d_team"        : int(team), 
                "d_position"    : int(p.position), 
                "d_status"      : int(p.status), 
