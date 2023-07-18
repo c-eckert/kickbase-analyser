@@ -121,7 +121,6 @@ def get_points_from_kb(_kb, player_ids):
 
 
 def main():
-    print("----------------------")
     start = time()
 
     kb, league_id = myKickbase.get_kickbase_object()
@@ -129,7 +128,7 @@ def main():
 
     st.title('Kickbase Analyzer')
     st.subheader(f'Average Points ({str(match_day)}. Matchday)')
-    is_unspecified_avg = st.checkbox('unspecified avg')
+    is_unspecified_avg = st.checkbox('unspecified avg', True)
     if not is_unspecified_avg:
         avg_range = st.slider("Select how many matchdays will count", 1, match_day, 2)
     positions = st.multiselect('Select whitch positions to show', ['TW', 'ABW', 'MIT', 'ANG'], [])
@@ -217,8 +216,9 @@ def main():
     st.text(str(t_A))
     st.text(str(t_B))
     st.text(str(t_D))
-
-    print(f"END: {time() - start}")
+    
+    if st.button("Clear Cash"):
+        st.cache_data.clear()
 
 if __name__ == "__main__":
     main()

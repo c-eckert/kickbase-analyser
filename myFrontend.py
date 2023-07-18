@@ -40,6 +40,7 @@ def player_row_short(player):
         color = "#22c48b" # green
     else:
         color = "#ea5f42" # red
+
     st.markdown(f"""
         <div class="short_player_row">
             <table>

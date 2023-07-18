@@ -30,7 +30,8 @@ POSITION_DICT = {
     1 : "TW",
     2 : "ABW",
     3 : "MIT",
-    4 : "ANG"
+    4 : "ANG",
+    9999999999: "TEAM"
 }
 
 
